@@ -1,0 +1,18 @@
+name: snakeppo
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - flask
+  - flask-cors
+  - flask-socketio
+  - eventlet
+  - pip
+  - pip:
+      # Torch from pip ensures the correct wheel on each machine:
+      #   - macOS (MPS), Windows/Linux CPU, or CUDA if available.
+      - torch
+      - torchvision
+      - torchaudio
