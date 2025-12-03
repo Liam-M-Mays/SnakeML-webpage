@@ -1,134 +1,273 @@
-from flask import Flask
+"""
+Main Flask application for SnakeML Playground.
+
+Provides REST API and SocketIO endpoints for:
+- Environment management
+- Training control
+- Metrics streaming
+- Model management
+- Replay management
+- Configuration
+"""
+
+from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
-
-from Session import Session
-
-import time
 import logging
 
-# At the top of your Python file, before running the app
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)  # Only show errors, not INFO messages
+from envs import list_environments, create_env
+from agents.config import get_default_config
+from storage import get_storage_manager
+from utils.device import get_device_info, set_global_device
+from training_manager import TrainingSession
 
-# If using SocketIO
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 logging.getLogger('socketio').setLevel(logging.ERROR)
 logging.getLogger('engineio').setLevel(logging.ERROR)
 
+# Flask app
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["http://localhost:3000"]}})
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Let Flask-SocketIO auto-pick async mode (will pick "eventlet" if installed)
-socketio = SocketIO(app, cors_allowed_origins=["*"])
-#prob want to make a instance of the game handler that calls the game script functions
+# SocketIO
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
-session = None
-loop = False
+# Global state
+current_session: TrainingSession = None
+storage = get_storage_manager()
 
-@socketio.on('init')
+# Initialize device
+set_global_device()
+
+
+# ========== ENVIRONMENT ENDPOINTS ==========
+
+@app.route("/api/environments", methods=["GET"])
+def get_environments():
+    """List all available environments."""
+    envs = list_environments()
+    return jsonify({"environments": envs})
+
+
+@app.route("/api/environments/<env_name>/metadata", methods=["GET"])
+def get_environment_metadata(env_name):
+    """Get metadata for a specific environment."""
+    try:
+        env = create_env(env_name)
+        metadata = env.get_metadata()
+        return jsonify(metadata)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
+# ========== CONFIGURATION ENDPOINTS ==========
+
+@app.route("/api/config/default/<algo>", methods=["GET"])
+def get_default_configuration(algo):
+    """Get default configuration for an algorithm."""
+    try:
+        config = get_default_config(algo)
+        return jsonify(config)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
+# ========== TRAINING ENDPOINTS ==========
+
+@app.route("/api/training/start", methods=["POST"])
+def start_training():
+    """Start a new training session."""
+    global current_session
+
+    if current_session and current_session.is_running:
+        return jsonify({"error": "Training already running"}), 400
+
+    config = request.json
+    max_speed = config.pop("max_speed", False)
+
+    try:
+        current_session = TrainingSession(config, socketio=socketio)
+        current_session.start(max_speed=max_speed)
+
+        return jsonify({
+            "message": "Training started",
+            "run_id": current_session.run_id,
+            "status": current_session.get_status()
+        })
+    except Exception as e:
+        logging.error(f"Failed to start training: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/training/stop", methods=["POST"])
+def stop_training():
+    """Stop current training session."""
+    global current_session
+
+    if not current_session:
+        return jsonify({"error": "No training session"}), 400
+
+    current_session.stop()
+
+    return jsonify({
+        "message": "Training stopped",
+        "status": current_session.get_status()
+    })
+
+
+@app.route("/api/training/status", methods=["GET"])
+def get_training_status():
+    """Get current training status."""
+    if not current_session:
+        return jsonify({"is_running": False})
+
+    return jsonify(current_session.get_status())
+
+
+# ========== MODEL ENDPOINTS ==========
+
+@app.route("/api/models", methods=["GET"])
+def list_models():
+    """List all saved models."""
+    env_name = request.args.get("env_name")
+    models = storage.list_runs(env_name=env_name)
+    return jsonify({"models": models})
+
+
+@app.route("/api/models/<env_name>/<run_id>", methods=["DELETE"])
+def delete_model(env_name, run_id):
+    """Delete a model."""
+    success = storage.delete_run(env_name, run_id)
+
+    if success:
+        return jsonify({"message": "Model deleted"})
+    else:
+        return jsonify({"error": "Model not found"}), 404
+
+
+@app.route("/api/models/<env_name>/<run_id>/config", methods=["GET"])
+def get_model_config(env_name, run_id):
+    """Get configuration for a saved model."""
+    config = storage.load_config(env_name, run_id)
+
+    if config:
+        return jsonify(config)
+    else:
+        return jsonify({"error": "Config not found"}), 404
+
+
+# ========== METRICS ENDPOINTS ==========
+
+@app.route("/api/metrics/<env_name>/<run_id>", methods=["GET"])
+def get_metrics(env_name, run_id):
+    """Get metrics for a run."""
+    limit = request.args.get("limit", type=int)
+    metrics = storage.load_metrics(env_name, run_id, limit=limit)
+
+    return jsonify({"metrics": metrics})
+
+
+@app.route("/api/metrics/<env_name>/<run_id>/death_stats", methods=["GET"])
+def get_death_stats(env_name, run_id):
+    """Get death statistics for a run."""
+    stats = storage.get_death_stats(env_name, run_id)
+
+    return jsonify({"death_stats": stats})
+
+
+# ========== REPLAY ENDPOINTS ==========
+
+@app.route("/api/replays/<env_name>/<run_id>", methods=["GET"])
+def list_replays(env_name, run_id):
+    """List replays for a run."""
+    replays = storage.list_replays(env_name, run_id)
+    return jsonify({"replays": replays})
+
+
+@app.route("/api/replays/<env_name>/<run_id>/<replay_id>", methods=["GET"])
+def get_replay(env_name, run_id, replay_id):
+    """Get a specific replay."""
+    replay = storage.load_replay(env_name, run_id, replay_id)
+
+    if replay:
+        return jsonify(replay)
+    else:
+        return jsonify({"error": "Replay not found"}), 404
+
+
+@app.route("/api/replays/<env_name>/<run_id>/<replay_id>", methods=["DELETE"])
+def delete_replay(env_name, run_id, replay_id):
+    """Delete a replay."""
+    success = storage.delete_replay(env_name, run_id, replay_id)
+
+    if success:
+        return jsonify({"message": "Replay deleted"})
+    else:
+        return jsonify({"error": "Replay not found"}), 404
+
+
+# ========== SYSTEM ENDPOINTS ==========
+
+@app.route("/api/device", methods=["GET"])
+def get_device():
+    """Get device information."""
+    device_info = get_device_info()
+    return jsonify(device_info)
+
+
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    """Health check endpoint."""
+    return jsonify({
+        "status": "healthy",
+        "device": get_device_info(),
+    })
+
+
+# ========== SOCKETIO EVENTS (for legacy human play mode) ==========
+
+@socketio.on("init")
 def handle_init(data):
-    global session
-    grid_size = data.get('grid_size')
-    AI = data.get('AI_mode')
-    Model = data.get('modelType')
-    parms = data.get('params')
-    session = Session(grid_size=grid_size, AI_mode=AI, model=Model, params=parms)
-    score , food_position, snake_position, game_over = session.get_state()
-    emit('game_update', {
-        'score': score,
-        'food_position': food_position,
-        'snake_position': snake_position,
-        'game_over': game_over,
-        'episode': session.episodes
+    """Initialize a manual play session (legacy)."""
+    grid_size = data.get("grid_size", 10)
+
+    # Create environment for manual play
+    env = create_env("snake", grid_size=grid_size)
+    state = env.reset()
+    render = env.render_state()
+
+    emit("game_update", {
+        **render,
+        "episode": 0,
     })
 
-@socketio.on('reset_game')
-def handle_reset_game(data):
-    global session
-    if session is None: return
-    score, food_position, snake_position = session.reset()
-    emit('game_update', {
-        'score': score,
-        'food_position': food_position,
-        'snake_position': snake_position,
-        'game_over': True,
-        'episode': session.episodes
-    })
 
-@socketio.on('step')
+@socketio.on("step")
 def handle_step(data):
-    global session
-    if session is None: return
-    action = data.get('action')
-    score, food_position, snake_position, game_over = session.step(action)
-    if game_over:
-        score, food_position, snake_position = session.reset()
-    emit('game_update', {
-        'score': score,
-        'food_position': food_position,
-        'snake_position': snake_position,
-        'game_over': game_over,
-        'episode': session.episodes
-    })
-    emit('set_highscore', {
-        'highscore': session.highscore
-    })
-
-@socketio.on('AI_step')
-def handle_AI_step():
-    global session
-    if session is None: return
-    score, food_position, snake_position, game_over = session.AI_step()
-    if game_over:
-        score, food_position, snake_position = session.reset()
-    emit('game_update', {
-        'score': score,
-        'food_position': food_position,
-        'snake_position': snake_position,
-        'game_over': False,
-        'episode': session.episodes
-    })
-    emit('set_highscore', {
-        'highscore': session.highscore
-    })
-
-@socketio.on('AI_loop')
-def handle_AI_loop():
-    global session
-    if session is None: return
-    global loop
-    loop = True
-    highscore = session.highscore
-    step = 0
-    total_time = 0
-    while loop: #change to condition
-        step += 1
-        stamp = time.perf_counter()
-        score, food_position, snake_position, game_over = session.AI_step()
-        total_time += (time.perf_counter() - stamp)*1000
-        if game_over:
-            score, food_position, snake_position = session.reset()
-        if total_time > 500:
-            total_time = 0
-            emit('game_update', {
-                'score': score,
-                'food_position': {"x": None, "y": None},
-                'snake_position': [{"x": None, "y": None}],
-                'game_over': False,
-                'episode': session.episodes
-            })
-        if session.highscore > highscore:
-            highscore = session.highscore
-            emit('set_highscore', {
-                'highscore': session.highscore
-            })
-        socketio.sleep(0)  # Small delay to prevent overwhelming the client
-
-@socketio.on('stop_loop')
-def handle_stop_training():
-    global loop
-    loop = False
+    """Handle manual step (legacy - would need session management for full support)."""
+    # This is a simplified version; full implementation would track per-client sessions
+    emit("game_update", {"message": "Use the new training API for AI play"})
 
 
-if __name__ == '__main__':
-    socketio.run(app, host="127.0.0.1", port=5000, debug=False, use_reloader=True, log_output=False)
+# ========== MAIN ==========
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("🐍 SnakeML Playground Backend")
+    print("=" * 60)
+    print(f"Device: {get_device_info()}")
+    print("Backend running on: http://127.0.0.1:5000")
+    print("API documentation: http://127.0.0.1:5000/api/health")
+    print("=" * 60)
+
+    socketio.run(
+        app,
+        host="127.0.0.1",
+        port=5000,
+        debug=False,
+        use_reloader=False,
+        log_output=False
+    )
