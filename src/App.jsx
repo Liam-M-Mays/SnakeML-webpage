@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { api } from "./utils/api";
 import { useTraining } from "./hooks/useTraining";
+import SnakeBoard from "./components/GameBoard/SnakeBoard";
 import "./App.css";
 
 function App() {
@@ -14,6 +15,13 @@ function App() {
     runId,
     status,
     progress,
+    gameState,
+    tickSpeed,
+    setTickSpeed,
+    isPaused,
+    setIsPaused,
+    isFullscreen,
+    setIsFullscreen,
     episodes,
     error,
     startTraining,
@@ -36,9 +44,8 @@ function App() {
   const handleStartTraining = async () => {
     if (!config) return;
 
-    const maxSpeed = document.getElementById("max-speed-checkbox")?.checked || false;
-
     try {
+      const maxSpeed = tickSpeed === "MAX";
       await startTraining({ ...config, max_speed: maxSpeed });
     } catch (err) {
       console.error("Failed to start training:", err);
@@ -114,17 +121,6 @@ function App() {
             <div className="train-controls">
               <h2>Training Control</h2>
 
-              <div className="control-group">
-                <label>
-                  <input
-                    id="max-speed-checkbox"
-                    type="checkbox"
-                    disabled={isTraining}
-                  />
-                  Max Speed (faster training, less visualization)
-                </label>
-              </div>
-
               <div className="button-group">
                 {!isTraining ? (
                   <button
@@ -151,11 +147,57 @@ function App() {
               <div className="dashboard">
                 <h2>Training Progress</h2>
 
-                {progress && progress.is_max_speed && (
-                  <div className="max-speed-indicator">
-                    ⚡ MAX SPEED MODE - {progress.episodes_per_second.toFixed(1)} eps/sec
+                <div className={`game-container ${isFullscreen ? "fullscreen" : ""}`}>
+                  <div className="game-controls">
+                    <div className="left">
+                      <div className="speed-buttons">
+                        {["1x", "2x", "5x", "10x", "MAX"].map((speed) => (
+                          <button
+                            key={speed}
+                            className={tickSpeed === speed ? "active" : ""}
+                            onClick={() => setTickSpeed(speed)}
+                          >
+                            {speed}
+                          </button>
+                        ))}
+                      </div>
+                      {progress?.is_max_speed && (
+                        <div className="max-speed-indicator">
+                          ⚡ MAX SPEED MODE -
+                          {" "}
+                          {progress?.episodes_per_second
+                            ? progress.episodes_per_second.toFixed(1)
+                            : "0.0"}
+                          {" "}
+                          eps/sec
+                        </div>
+                      )}
+                    </div>
+                    <div className="right">
+                      {/* TODO: connect pause/resume to backend training control if exposed */}
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => setIsPaused((prev) => !prev)}
+                      >
+                        {isPaused ? "Resume" : "Pause"}
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => setIsFullscreen((prev) => !prev)}
+                      >
+                        {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                      </button>
+                    </div>
                   </div>
-                )}
+
+                  {isPaused && (
+                    <div className="info-message">
+                      Visualization paused. Training continues in the background.
+                    </div>
+                  )}
+
+                  <SnakeBoard gameState={gameState || progress?.game_state} fullscreen={isFullscreen} />
+                </div>
 
                 <div className="stats-grid">
                   <div className="stat-card">
