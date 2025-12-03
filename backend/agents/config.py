@@ -266,6 +266,8 @@ def validate_reward_config(config: Union[dict, RewardConfig]) -> List[str]:
             )
 
     return errors
+
+"""
 Configuration system for training runs.
 
 Defines the structure for:

@@ -261,73 +261,6 @@ class SnakeEnv(BaseEnvironment):
         """
         return self._calculate_reward(event)
 
-    def step(self, action) -> tuple:
-        """
-        Execute one step in the environment.
-
-        This overrides the parent class to:
-        - Track steps since last food
-        - Use _calculate_reward for all reward calculations
-
-        Args:
-            action: The action to take (string or int)
-
-        Returns:
-            Tuple of (score, food_position, snake_position, game_over)
-        """
-        # Track previous score to detect food eating
-        prev_score = self.score
-
-        # Current head (copy so we don't mutate in-place before checks)
-        head = self.snake_position[0].copy()
-
-        # Move intent (same logic as parent)
-        grid_size=10,
-        reward_config=None,
-        vision=0,
-        seg_size=3,
-        starvation_limit=None
-    ):
-        """
-        Initialize Snake environment.
-
-        Args:
-            grid_size: Size of the grid (grid_size x grid_size)
-            reward_config: Dict with reward values (apple, death_wall, death_self, death_starv, step)
-            vision: Vision mode (0=immediate danger, >0=window size, -1=full grid)
-            seg_size: Number of body segments to track
-            starvation_limit: Steps without food before death (None = grid_size^2)
-        """
-        self.grid_size = grid_size
-        self.vision = vision
-        self.seg_size = seg_size
-
-        # Default reward configuration
-        self.reward_config = {
-            "apple": 1.0,
-            "death_wall": -1.0,
-            "death_self": -1.0,
-            "death_starv": -0.5,
-            "step": -0.001,  # Negative to encourage speed
-        }
-        if reward_config:
-            self.reward_config.update(reward_config)
-
-        self.starvation_limit = starvation_limit or (grid_size ** 2)
-
-        # State variables (initialized in reset)
-        self.snake_position = []
-        self.food_position = {}
-        self.direction = [1, 0]
-        self.score = 0
-        self.hunger = 0
-        self.game_over = False
-        self.last_reward = 0
-        self.death_reason = None
-        self.steps = 0
-
-        self.reset()
-
     def reset(self, seed=None) -> Any:
         """Reset the environment to initial state."""
         if seed is not None:
@@ -547,37 +480,6 @@ def make_snake_env(
         Configured SnakeEnv instance
     """
     return SnakeEnv(grid=grid, ai=ai, reward_config=reward_config)
-        # Handle integer actions (relative directions)
-        elif action == 0:  # Straight
-            head["x"] += self.direction[0]
-            head["y"] += self.direction[1]
-        elif action == 1:  # Turn right
-            if self.direction == [1, 0]:     # right -> down
-                head["y"] += 1
-                self.direction = [0, 1]
-            elif self.direction == [0, 1]:   # down -> left
-                head["x"] -= 1
-                self.direction = [-1, 0]
-            elif self.direction == [-1, 0]:  # left -> up
-                head["y"] -= 1
-                self.direction = [0, -1]
-            elif self.direction == [0, -1]:  # up -> right
-                head["x"] += 1
-                self.direction = [1, 0]
-        elif action == 2:  # Turn left
-            if self.direction == [1, 0]:     # right -> up
-                head["y"] -= 1
-                self.direction = [0, -1]
-            elif self.direction == [0, 1]:   # down -> right
-                head["x"] += 1
-                self.direction = [1, 0]
-            elif self.direction == [-1, 0]:  # left -> down
-                head["y"] += 1
-                self.direction = [0, 1]
-            elif self.direction == [0, -1]:  # up -> left
-                head["x"] -= 1
-                self.direction = [-1, 0]
-
     def _place_food(self):
         """Place food at a random empty position."""
         while True:
