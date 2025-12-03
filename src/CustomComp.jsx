@@ -1,13 +1,90 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import './App.css'
 
+// ========== DEVICE SELECTOR COMPONENT ==========
+export function DeviceSelector({ deviceInfo, setDeviceInfo, isRunning }) {
+    const [loading, setLoading] = useState(false)
+
+    // Fetch device info on mount
+    useEffect(() => {
+        fetchDeviceInfo()
+    }, [])
+
+    const fetchDeviceInfo = async () => {
+        try {
+            const response = await fetch('http://127.0.0.1:5000/api/device')
+            if (response.ok) {
+                const data = await response.json()
+                setDeviceInfo(data)
+            }
+        } catch (error) {
+            console.error('Failed to fetch device info:', error)
+        }
+    }
+
+    const handleDeviceChange = async (e) => {
+        const newDevice = e.target.value
+        setLoading(true)
+        try {
+            const response = await fetch('http://127.0.0.1:5000/api/device/set', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device: newDevice })
+            })
+            if (response.ok) {
+                const data = await response.json()
+                setDeviceInfo(data)
+            }
+        } catch (error) {
+            console.error('Failed to set device:', error)
+        }
+        setLoading(false)
+    }
+
+    if (!deviceInfo) {
+        return <div className="device-loading">Loading device info...</div>
+    }
+
+    return (
+        <div className="device-selector">
+            <label>Compute Device:</label>
+            <select
+                value={deviceInfo.preference}
+                onChange={handleDeviceChange}
+                disabled={isRunning || loading}
+            >
+                <option value="auto">Auto (recommended)</option>
+                <option value="cpu">CPU</option>
+                <option value="cuda">CUDA (NVIDIA GPU)</option>
+                <option value="mps">MPS (Apple Silicon)</option>
+            </select>
+
+            <div className="device-status">
+                <span className="device-name">{deviceInfo.name}</span>
+                {deviceInfo.fallback && (
+                    <span className="device-fallback">
+                        (requested {deviceInfo.preference}, using {deviceInfo.resolved})
+                    </span>
+                )}
+            </div>
+
+            <div className="device-available">
+                Available: {deviceInfo.available.join(', ').toUpperCase()}
+            </div>
+        </div>
+    )
+}
+
+
 export function GameSettings({
-    gridSize, setGridSize, 
-    controlMode, setControlMode, 
-    colors, setColors, 
-    boardSize, setBoardSize, 
+    gridSize, setGridSize,
+    controlMode, setControlMode,
+    colors, setColors,
+    boardSize, setBoardSize,
     gameSpeed, setGameSpeed,
-    isRunning, resetGame}){
+    isRunning, resetGame,
+    setIsRunning,
+    deviceInfo, setDeviceInfo}){
     const [activeTab, setActiveTab] = useState('board')
 
 
@@ -16,23 +93,29 @@ export function GameSettings({
           <h3 style={{textAlign: 'center'}}>Game Settings</h3>
           <div className='tab-container' >
             <div className="tab-buttons">
-              <button 
+              <button
                   className={`tab-button ${activeTab === 'board' ? 'active' : ''}`}
                   onClick={() => setActiveTab('board')}
                 >
                   Board
                 </button>
-                <button 
+                <button
                   className={`tab-button ${activeTab === 'color' ? 'active' : ''}`}
                   onClick={() => setActiveTab('color')}
                 >
                    Colors
                 </button>
-                <button 
+                <button
                   className={`tab-button ${activeTab === 'speed' ? 'active' : ''}`}
                   onClick={() => setActiveTab('speed')}
                 >
                   Speed
+                </button>
+                <button
+                  className={`tab-button ${activeTab === 'device' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('device')}
+                >
+                  Device
                 </button>
             </div>
           </div>
@@ -113,18 +196,28 @@ export function GameSettings({
                       setGameSpeed(newSize)
                     }}
                   />
+                  <div className="speed-hint">
+                    {gameSpeed === 0 ? 'Max speed (no visualization)' : `${gameSpeed}ms per step`}
+                  </div>
                 </>) : (
                   <p>Speeds are only in AI modes.</p>
                 )}
-                
+
               </div>
+            )}
+            {activeTab === 'device' && (
+              <DeviceSelector
+                deviceInfo={deviceInfo}
+                setDeviceInfo={setDeviceInfo}
+                isRunning={isRunning}
+              />
             )}
           </div>
 
           {/* ========== CONTROL MODE SELECTION ========== */}
           <div className="control-group">
             <label>Control Mode:</label>
-            <select 
+            <select
               value={controlMode}
               disabled={isRunning}
               onChange={(m) => setControlMode(m.target.value)}
@@ -134,6 +227,21 @@ export function GameSettings({
               <option value="ppo">PPO AI</option>
             </select>
           </div>
+
+          {/* ========== START TRAINING BUTTON (AI modes only) ========== */}
+          {controlMode !== 'human' && !isRunning && (
+            <div className="start-training-section">
+              <button
+                className="start-training-btn"
+                onClick={() => setIsRunning(true)}
+              >
+                Start Training
+              </button>
+              <p className="training-hint">
+                Configure AI settings on the right panel before starting
+              </p>
+            </div>
+          )}
         </div>
         )
     

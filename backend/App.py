@@ -14,6 +14,7 @@ from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import logging
+import traceback
 
 from envs import list_environments, create_env
 from agents.config import get_default_config
