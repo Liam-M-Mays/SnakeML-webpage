@@ -219,6 +219,9 @@ class TrainingSession:
                 avg_score = sum(self.recent_scores) / len(self.recent_scores) if self.recent_scores else 0
                 eps_per_sec = 1.0 / (current_time - episode_start_time + 0.001) if done else 0
 
+                # Include game state for visualization
+                game_state = self.env.render_state() if hasattr(self.env, 'render_state') else {}
+
                 self.socketio.emit("training_progress", {
                     "run_id": self.run_id,
                     "episode": self.episode_count,
@@ -228,6 +231,7 @@ class TrainingSession:
                     "avg_score": round(avg_score, 2),
                     "episodes_per_second": round(eps_per_sec, 2),
                     "is_max_speed": self.max_speed,
+                    "game_state": game_state,  # Added for game board visualization
                 })
 
                 last_emit_time = current_time
