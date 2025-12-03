@@ -139,15 +139,22 @@ def install_frontend_deps():
 
     try:
         # Run npm install from the repo root
+        # On Windows, use shell=True to handle npm.cmd
+        is_windows = platform.system() == "Windows"
         subprocess.run(
             ["npm", "install"],
             cwd=repo_root,
-            check=True
+            check=True,
+            shell=is_windows
         )
         print_success("Frontend dependencies installed")
         return True
     except subprocess.CalledProcessError as e:
         print_error(f"Failed to install frontend dependencies: {e}")
+        return False
+    except FileNotFoundError as e:
+        print_error(f"npm command not found: {e}")
+        print_info("Make sure npm is in your PATH and try again")
         return False
 
 def start_servers():
@@ -170,9 +177,12 @@ def start_servers():
     )
 
     # Start frontend process
+    # On Windows, use shell=True to handle npm.cmd
+    is_windows = platform.system() == "Windows"
     frontend_process = subprocess.Popen(
         ["npm", "run", "dev"],
-        cwd=repo_root
+        cwd=repo_root,
+        shell=is_windows
     )
 
     try:
@@ -223,8 +233,9 @@ def main():
     elif frontend_only:
         print_header("Starting Frontend Server Only")
         repo_root = Path(__file__).parent
+        is_windows = platform.system() == "Windows"
         try:
-            subprocess.run(["npm", "run", "dev"], cwd=repo_root)
+            subprocess.run(["npm", "run", "dev"], cwd=repo_root, shell=is_windows)
         except KeyboardInterrupt:
             print_info("\nFrontend server stopped")
     else:
