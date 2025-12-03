@@ -290,16 +290,16 @@ models/
 **File**: `backend/utils/device.py`
 
 Device selection priority:
-1. `FORCE_DEVICE` environment variable (`cpu`, `cuda`, `mps`)
-2. MPS (Apple Silicon) if available
-3. CUDA (NVIDIA GPU) if available
-4. CPU fallback
+1. `FORCE_DEVICE` environment variable (`cpu`, `cuda`, `mps`) overrides everything.
+2. User preference via `set_device_preference("auto"|"cpu"|"cuda"|"mps")` (stored in-memory) if available.
+3. Auto-detect fallback: prefers MPS, then CUDA, then CPU.
 
 **API:**
-- `get_device() -> torch.device` — Select best device
-- `get_device_info() -> Dict` — Get device details (type, name, memory)
-- `set_global_device(device=None)` — Set global device
-- `get_global_device() -> torch.device` — Get global device
+- `set_device_preference(pref)` / `get_device_preference()` — Manage device preference.
+- `resolve_device() -> torch.device` — Select device using the rules above.
+- `get_device_info() -> Dict` — Get device details (preference, resolved type, name, memory).
+- `set_global_device(device=None)` — Set global device (still supported for compatibility).
+- `get_global_device() -> torch.device` — Get global device.
 
 **Usage:**
 ```python
@@ -308,6 +308,21 @@ from utils.device import get_global_device
 device = get_global_device()
 model = model.to(device)
 tensor = tensor.to(device)
+```
+
+**REST API:**
+- `GET /api/device` — Current device info
+- `POST /api/device/set` with body `{ "device": "auto" | "cpu" | "cuda" | "mps" }` — Update preference (falls back if unavailable)
+
+Example:
+```bash
+# Check current device
+curl -X GET http://localhost:5000/api/device
+
+# Request CUDA (will fall back to CPU if not available)
+curl -X POST http://localhost:5000/api/device/set \
+     -H "Content-Type: application/json" \
+     -d '{"device": "cuda"}'
 ```
 
 **Environment variable override:**
