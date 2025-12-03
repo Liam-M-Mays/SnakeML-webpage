@@ -18,7 +18,7 @@ import logging
 from envs import list_environments, create_env
 from agents.config import get_default_config
 from storage import get_storage_manager
-from utils.device import get_device_info, set_global_device
+from utils.device import get_device_info, set_device_preference, set_global_device
 from training_manager import TrainingSession
 
 # Configure logging
@@ -216,6 +216,26 @@ def get_device():
     """Get device information."""
     device_info = get_device_info()
     return jsonify(device_info)
+
+
+@app.route("/api/device/set", methods=["POST"])
+def set_device_preference_endpoint():
+    """Set device preference for future training sessions."""
+
+    payload = request.get_json(silent=True) or {}
+    preference = payload.get("device")
+
+    if preference not in ["auto", "cpu", "cuda", "mps"]:
+        return jsonify({"error": "Invalid device preference"}), 400
+
+    try:
+        set_device_preference(preference)
+        # Keep the cached global device aligned with the new preference
+        set_global_device()
+    except ValueError:
+        return jsonify({"error": "Invalid device preference"}), 400
+
+    return jsonify(get_device_info())
 
 
 @app.route("/api/health", methods=["GET"])
