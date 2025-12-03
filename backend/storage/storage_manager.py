@@ -57,7 +57,7 @@ class StorageManager:
         # Add metadata
         config_with_meta = {
             **config,
-            "created_at": datetime.now().isoformat(),
+            "created_at": config.get("created_at") or datetime.now().isoformat(),
             "env_name": env_name,
             "run_id": run_id,
         }
