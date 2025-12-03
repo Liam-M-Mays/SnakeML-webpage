@@ -1,175 +1,188 @@
-"""
-Device management utilities for PyTorch training.
+"""Device selection utilities for PyTorch."""
 
-Supports:
-- Auto device selection (priority: MPS > CUDA > CPU)
-- Manual device preference
-- Environment variable override (FORCE_DEVICE)
-- Device info reporting with fallback status
-"""
+"""Device selection utilities for PyTorch."""
 
-import os
-import torch
 import logging
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+import torch
 
 logger = logging.getLogger(__name__)
 
-# Valid device preferences
-VALID_PREFERENCES = {"auto", "cpu", "cuda", "mps"}
+_VALID_PREFERENCES = {"auto", "cpu", "cuda", "mps"}
+_PREFERRED_DEVICE = "auto"
 
-# Module-level device preference (defaults to "auto")
-_device_preference = "auto"
+# Global device instance (lazily initialized)
+_global_device: Optional[torch.device] = None
 
 
-def set_device_preference(preference: str) -> bool:
-    """
-    Set the device preference for training.
+def _normalize_device(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    return normalized if normalized in _VALID_PREFERENCES else None
 
-    Args:
-        preference: One of "auto", "cpu", "cuda", "mps"
 
-    Returns:
-        True if preference was set successfully, False otherwise
-    """
-    global _device_preference
-    preference = preference.lower().strip()
-
-    if preference not in VALID_PREFERENCES:
-        logger.warning(f"Invalid device preference: {preference}. Valid: {VALID_PREFERENCES}")
+def _is_mps_available() -> bool:
+    try:
+        return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+    except Exception:
         return False
 
-    _device_preference = preference
-    logger.info(f"Device preference set to: {preference}")
-    return True
+
+def _is_cuda_available() -> bool:
+    try:
+        return torch.cuda.is_available()
+    except Exception:
+        return False
 
 
-def get_device_preference() -> str:
-    """Get the current device preference."""
-    return _device_preference
-
-
-def _get_available_devices() -> list:
-    """Get list of available device types."""
-    available = ["cpu"]  # CPU is always available
-
-    if torch.cuda.is_available():
-        available.append("cuda")
-
-    # Check for MPS (Apple Silicon)
-    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+def _get_available_devices() -> List[str]:
+    available: List[str] = []
+    if _is_mps_available():
         available.append("mps")
-
+    if _is_cuda_available():
+        available.append("cuda")
+    available.append("cpu")
     return available
 
 
-def _get_device_name(device_type: str) -> str:
-    """Get human-readable device name."""
-    if device_type == "cpu":
-        return "CPU"
-    elif device_type == "cuda":
+def set_device_preference(pref: str) -> None:
+    """Set the preferred device for future training sessions."""
+
+    global _PREFERRED_DEVICE, _global_device
+    normalized = _normalize_device(pref)
+    if not normalized:
+        raise ValueError("Invalid device preference. Must be one of: auto, cpu, cuda, mps")
+
+    _PREFERRED_DEVICE = normalized
+    # Reset cached device so future calls re-resolve with the new preference
+    _global_device = None
+
+
+def get_device_preference() -> str:
+    """Return the current preferred device string."""
+
+    return _PREFERRED_DEVICE
+
+
+def _resolve_with_details() -> Tuple[torch.device, Dict[str, Any]]:
+    available = _get_available_devices()
+    force_device = _normalize_device(os.getenv("FORCE_DEVICE"))
+    requested = force_device or (_PREFERRED_DEVICE if _PREFERRED_DEVICE != "auto" else None)
+
+    info: Dict[str, Any] = {
+        "preference": _PREFERRED_DEVICE,
+        "force_device": force_device,
+        "available": available,
+        "requested": requested,
+        "requested_available": True,
+    }
+
+    resolved_type: str
+    fallback_reason: Optional[str] = None
+    warning: Optional[str] = None
+
+    if force_device:
+        if force_device in available:
+            resolved_type = force_device
+        else:
+            resolved_type = "cpu"
+            fallback_reason = f"FORCE_DEVICE '{force_device}' unavailable; using CPU"
+    elif _PREFERRED_DEVICE != "auto":
+        if _PREFERRED_DEVICE in available:
+            resolved_type = _PREFERRED_DEVICE
+        else:
+            resolved_type = "cpu"
+            fallback_reason = f"Preferred device '{_PREFERRED_DEVICE}' unavailable; using CPU"
+    else:
+        if "mps" in available:
+            resolved_type = "mps"
+        elif "cuda" in available:
+            resolved_type = "cuda"
+        else:
+            resolved_type = "cpu"
+
+    try:
+        device = torch.device(resolved_type)
+        # Light-touch validation for accelerator types
+        if resolved_type in ("cuda", "mps"):
+            torch.tensor([0.0], device=device)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        fallback_reason = f"Failed to initialize device '{resolved_type}': {exc}. Falling back to CPU"
+        device = torch.device("cpu")
+        resolved_type = "cpu"
+
+    info.update({
+        "device": str(device),
+        "type": device.type,
+        "resolved": resolved_type,
+    })
+
+    if fallback_reason:
+        warning = fallback_reason
+        info["fallback_reason"] = fallback_reason
+
+    # Human-friendly naming and extra details
+    details: Dict[str, Any] = {}
+    if resolved_type == "cuda" and _is_cuda_available():
         try:
-            return f"CUDA: {torch.cuda.get_device_name(0)}"
+            info["name"] = torch.cuda.get_device_name(0)
+            details["memory_total"] = torch.cuda.get_device_properties(0).total_memory
+            details["memory_allocated"] = torch.cuda.memory_allocated(0)
+            details["cuda_version"] = torch.version.cuda
         except Exception:
-            return "CUDA GPU"
-    elif device_type == "mps":
-        return "MPS (Apple Silicon)"
-    return device_type
+            info["name"] = "CUDA"
+    elif resolved_type == "mps":
+        info["name"] = "Apple Silicon (MPS)"
+    else:
+        info["name"] = "CPU"
+
+    info["details"] = details
+    info["requested_available"] = requested in available if requested else True
+    info["is_available"] = resolved_type in available
+
+    if warning:
+        info["warning"] = warning
+    return device, info
 
 
 def resolve_device() -> torch.device:
-    """
-    Resolve the actual torch.device to use based on preference and availability.
+    """Resolve the torch.device honoring env override, preference, then auto-detect."""
 
-    Priority when preference is "auto": MPS > CUDA > CPU
-
-    If a specific device is requested but unavailable, falls back to CPU.
-    FORCE_DEVICE environment variable overrides all preferences.
-
-    Returns:
-        torch.device instance
-    """
-    # Check for environment variable override
-    force_device = os.environ.get("FORCE_DEVICE", "").lower().strip()
-    if force_device and force_device in VALID_PREFERENCES:
-        if force_device == "auto":
-            # Treat FORCE_DEVICE=auto same as preference auto
-            pass
-        else:
-            logger.info(f"FORCE_DEVICE environment variable set to: {force_device}")
-            if force_device == "cuda" and torch.cuda.is_available():
-                return torch.device("cuda")
-            elif force_device == "mps" and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                return torch.device("mps")
-            elif force_device == "cpu":
-                return torch.device("cpu")
-            else:
-                logger.warning(f"FORCE_DEVICE={force_device} not available, falling back to CPU")
-                return torch.device("cpu")
-
-    preference = _device_preference
-    available = _get_available_devices()
-
-    if preference == "auto":
-        # Auto-select: MPS > CUDA > CPU
-        if "mps" in available:
-            return torch.device("mps")
-        elif "cuda" in available:
-            return torch.device("cuda")
-        else:
-            return torch.device("cpu")
-
-    # Specific preference requested
-    if preference in available:
-        return torch.device(preference)
-    else:
-        logger.warning(f"Requested device '{preference}' not available, falling back to CPU")
-        return torch.device("cpu")
-
-
-def get_device_info() -> dict:
-    """
-    Get comprehensive device information.
-
-    Returns dict with:
-        - preference: User's device preference
-        - forced: Whether FORCE_DEVICE env var is set
-        - force_device: Value of FORCE_DEVICE if set
-        - resolved: The actual device that will be used
-        - available: List of available device types
-        - name: Human-readable name of resolved device
-        - fallback: True if resolved differs from preference (excluding "auto")
-    """
-    preference = _device_preference
-    available = _get_available_devices()
-
-    # Check FORCE_DEVICE
-    force_device = os.environ.get("FORCE_DEVICE", "").lower().strip()
-    forced = bool(force_device and force_device in VALID_PREFERENCES)
-
-    resolved_device = resolve_device()
-    resolved_type = resolved_device.type
-
-    # Determine if we fell back
-    fallback = False
-    if preference != "auto" and preference != resolved_type:
-        fallback = True
-
-    return {
-        "preference": preference,
-        "forced": forced,
-        "force_device": force_device if forced else None,
-        "resolved": resolved_type,
-        "available": available,
-        "name": _get_device_name(resolved_type),
-        "fallback": fallback
-    }
+    device, _ = _resolve_with_details()
+    return device
 
 
 def get_device() -> torch.device:
-    """
-    Convenience function - alias for resolve_device().
+    """Backward-compatible alias for device resolution."""
 
-    Returns:
-        torch.device instance for training
-    """
     return resolve_device()
+
+
+def get_device_info() -> Dict[str, Any]:
+    """Return JSON-serializable info about the resolved device."""
+
+    _, info = _resolve_with_details()
+    return info
+
+
+def set_global_device(device: Optional[torch.device] = None) -> torch.device:
+    """Set the global device to be used throughout the application."""
+
+    global _global_device
+    if device is None:
+        _global_device = resolve_device()
+    else:
+        _global_device = device if isinstance(device, torch.device) else torch.device(device)
+    return _global_device
+
+
+def get_global_device() -> torch.device:
+    """Get the global device, initializing if necessary."""
+
+    global _global_device
+    if _global_device is None:
+        _global_device = resolve_device()
+    return _global_device
