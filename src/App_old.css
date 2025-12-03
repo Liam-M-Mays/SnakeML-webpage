@@ -1,0 +1,275 @@
+/* ========== BASE STYLES ========== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background: #1a1a1a;
+  color: white;
+  line-height: 1.6;
+}
+
+/* ========== APP LAYOUT ========== */
+.app {
+  min-height: 100vh;
+  padding: 20px;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+
+/* ========== HEADER ========== */
+.header {
+  text-align: center;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #333;
+}
+
+.header h1 {
+  color: #4CAF50;
+  margin-bottom: 10px;
+}
+
+.score {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #4CAF50;
+}
+
+/* ========== MAIN CONTENT LAYOUT ========== */
+.content {
+  display: grid;
+  grid-template-columns: 300px 1fr 300px;
+  gap: 10px;
+  margin-bottom: 25px;
+  align-items: start;
+}
+
+
+
+/* ========== GAME SECTION ========== */
+.game-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+/* ========== GAME BOARD ========== */
+.game-board {
+  display: grid;
+  gap: 1px;
+  background-color: #333;
+  border: 2px solid #555;
+  margin-bottom: 10px;
+  margin-top: 25px;
+}
+
+/* ========== GRID CELLS ========== */
+.cell {
+  background-color: var(--grid-bg, #222);
+}
+
+.cell.snake {
+  background-color: var(--snake-color, #4CAF50);
+}
+
+.cell.food {
+  background-color: var(--food-color, #ff5252);
+  border-radius: 50%;
+}
+
+/* ========== GAME CONTROLS ========== */
+.game-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.game-controls button {
+  padding: 10px 20px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.game-controls button:hover {
+  background: #45a049;
+}
+
+/* ========== CONTROL PANEL ========== */
+.control-panel {
+  background: #2d2d2d;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  width: 300px;
+}
+
+.control-panel h3 {
+  margin-bottom: 15px;
+  color: #4CAF50;
+}
+
+.control-panel h4 {
+  margin: 15px 0 10px 0;
+  color: #ccc;
+}
+
+/* ========== CONTROL GROUPS ========== */
+.control-group {
+  margin-bottom: 15px;
+}
+
+.tab-container {
+  margin-bottom: 20px;
+}
+
+.tab-buttons {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #444;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 10px 15px;
+  background: #1a1a1a;
+  border: 1px solid #555;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: #ccc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+}
+
+.tab-button:hover {
+  background: #252525;
+  color: #fff;
+}
+
+.tab-button.active {
+  background: #2d2d2d;
+  color: #4CAF50;
+  border-color: #4CAF50;
+  border-bottom: 2px solid #2d2d2d;
+  margin-bottom: -2px;
+  position: relative;
+}
+
+
+.control-group label {
+  display: block;
+  margin-bottom: 5px;
+  color: #ccc;
+}
+
+.control-group select,
+.control-group input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #1a1a1a;
+  color: white;
+}
+
+.color-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-picker {
+  width: 60px !important;  /* Force specific width */
+  height: 40px !important; /* Force specific height */
+  padding: 0 !important;   /* Remove extra space */
+  /*border: 2px solid #555 !important;*/
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.color-preview {
+  padding: 8px 12px;
+  background: #2d2d2d;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  border: 1px solid #555;
+}
+
+.control-group input[type="range"] {
+  padding: 0;
+}
+
+/* ========== AI SETTINGS ========== */
+.ai-settings {
+  background: #235425;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  width: 300px;
+}
+
+.ai-settings h3 {
+  margin-bottom: 15px;
+}
+
+.ai-rewards {
+  display: flex;
+  margin-top: 10px;
+}
+
+.ai-tab-container {
+  margin-bottom: 20px;
+}
+
+.ai-tab-buttons {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #444;
+}
+
+.ai-tab-button {
+  flex: 1;
+  padding: 10px 15px;
+  background: #1a1a1a;
+  border: 1px solid #555;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: #ccc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+}
+
+.ai-tab-button:hover {
+  background: #252525;
+  color: #fff;
+}
+
+.ai-tab-button.active {
+  background: #235425;
+  color: #ffffff;
+  border-color: #2d2d2d;
+  border-bottom: 2px solid #235425;
+  margin-bottom: -2px;
+  position: relative;
+}
+
+/* ========== INSTRUCTIONS ========== */
+.instructions {
+  text-align: center;
+  color: #888;
+  font-size: 0.9rem;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+}

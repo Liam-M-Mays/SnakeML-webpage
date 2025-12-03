@@ -1,21 +1,5 @@
-"""Backend agents module."""
+"""RL Agents package."""
 
-from .config import (
-    RewardConfig,
-    RewardFormula,
-    RewardEvent,
-    LEGACY_EVENT_MAP,
-    DEFAULT_REWARD_CONFIG,
-    FORMULA_VARIABLES,
-    validate_reward_config,
-)
+from .network_builder import build_network
 
-__all__ = [
-    "RewardConfig",
-    "RewardFormula",
-    "RewardEvent",
-    "LEGACY_EVENT_MAP",
-    "DEFAULT_REWARD_CONFIG",
-    "FORMULA_VARIABLES",
-    "validate_reward_config",
-]
+__all__ = ["build_network"]
