@@ -184,6 +184,8 @@ class DQNAgent:
         checkpoint = torch.load(path, map_location=self.device)
         self.q_network.load_state_dict(checkpoint["q_network"])
         self.target_network.load_state_dict(checkpoint["target_network"])
-        self.optimizer.load_state_dict(checkpoint["optimizer"])
+        optimizer_state = checkpoint.get("optimizer")
+        if optimizer_state:
+            self.optimizer.load_state_dict(optimizer_state)
         self.episodes = checkpoint.get("episodes", 0)
         self.epsilon = checkpoint.get("epsilon", self.epsilon_end)

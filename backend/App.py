@@ -19,7 +19,7 @@ from envs import list_environments, create_env
 from agents.config import get_default_config
 from storage import get_storage_manager
 from utils.device import get_device_info, set_device_preference, set_global_device
-from training_manager import TrainingSession
+from training_manager import TrainingSession, create_session_from_run
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -99,6 +99,42 @@ def start_training():
         })
     except Exception as e:
         logging.error(f"Failed to start training: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/training/resume", methods=["POST"])
+def resume_training():
+    """Resume or clone a training session from saved weights."""
+    global current_session
+
+    if current_session and current_session.is_running:
+        return jsonify({"error": "Training already running"}), 400
+
+    data = request.json or {}
+    env_name = data.get("env_name")
+    run_id = data.get("run_id")
+    continue_training = data.get("continue_training", True)
+    max_speed = data.get("max_speed", False)
+
+    if not env_name or not run_id:
+        return jsonify({"error": "env_name and run_id are required"}), 400
+
+    try:
+        current_session = create_session_from_run(
+            env_name,
+            run_id,
+            continue_training=continue_training,
+            socketio=socketio,
+        )
+        current_session.start(max_speed=max_speed)
+
+        return jsonify({
+            "message": "Training resumed" if continue_training else "Training cloned and started",
+            "run_id": current_session.run_id,
+            "status": current_session.get_status()
+        })
+    except Exception as e:
+        logging.error(f"Failed to resume training: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
