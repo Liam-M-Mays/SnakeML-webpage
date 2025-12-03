@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
+import shutil
 
 ROOT = Path(__file__).parent
 BACKEND_PATH = ROOT / "backend" / "App.py"
@@ -18,6 +19,24 @@ BACKEND_PATH = ROOT / "backend" / "App.py"
 
 def run(cmd, cwd=None):
     return subprocess.run(cmd, cwd=cwd, check=True)
+
+
+def find_npm() -> list[str]:
+    """Return the appropriate npm command for the current platform.
+
+    On Windows, npm is typically exposed as "npm.cmd"; on Unix it is "npm". We
+    resolve the executable explicitly to avoid FileNotFoundError when the shell
+    does not auto-resolve the shim.
+    """
+
+    npm_candidates = ["npm.cmd", "npm"] if os.name == "nt" else ["npm"]
+    for candidate in npm_candidates:
+        path = shutil.which(candidate)
+        if path:
+            return [path]
+    raise FileNotFoundError(
+        "npm is not installed or not on PATH. Please install Node.js/npm first."
+    )
 
 
 def ensure_backend():
@@ -31,12 +50,14 @@ def ensure_frontend():
     node_modules = ROOT / "node_modules"
     if not node_modules.exists():
         print("[dev] Installing frontend dependencies...")
-        run(["npm", "install"], cwd=ROOT)
+        npm_cmd = find_npm()
+        run([*npm_cmd, "install"], cwd=ROOT)
 
 
 def start_processes(host: str, frontend_port: int):
     backend_cmd = [sys.executable, str(BACKEND_PATH)]
-    frontend_cmd = ["npm", "run", "dev", "--", "--host", host, "--port", str(frontend_port)]
+    npm_cmd = find_npm()
+    frontend_cmd = [*npm_cmd, "run", "dev", "--", "--host", host, "--port", str(frontend_port)]
 
     print(f"[dev] Starting backend: {' '.join(backend_cmd)}")
     backend = subprocess.Popen(backend_cmd, cwd=ROOT)
