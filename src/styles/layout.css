@@ -1,0 +1,305 @@
+.app-shell,
+.app {
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header,
+.header {
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(to right, rgba(155, 92, 255, 0.16), transparent);
+}
+
+.app-title,
+.header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.header-info {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.device-badge,
+.training-badge {
+  background: var(--color-accent-soft);
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+}
+
+.training-badge {
+  background: linear-gradient(135deg, #a149ff, #6428c5);
+  box-shadow: 0 0 12px rgba(155, 92, 255, 0.45);
+}
+
+.app-tabs,
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.75rem 1.5rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+}
+
+.app-tab,
+.tabs button {
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  background: transparent;
+  transition: background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.app-tab:hover,
+.tabs button:hover {
+  color: var(--color-text);
+  background: var(--color-bg-soft);
+  border-color: var(--color-border);
+  transform: translateY(-1px);
+}
+
+.app-tab.active,
+.tabs button.active {
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px rgba(155, 92, 255, 0.35);
+}
+
+.app-main,
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.5rem 1.5rem;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.page-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.page-subtitle {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.panel,
+.train-controls,
+.dashboard,
+.config-tab,
+.models-tab,
+.model-card,
+.stat-card,
+.header,
+.footer {
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-soft);
+}
+
+.panel,
+.train-controls,
+.dashboard,
+.config-tab,
+.models-tab {
+  padding: 1.25rem 1.5rem;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.panel-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-soft);
+  background: var(--color-bg-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.btn:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+  box-shadow: 0 8px 18px rgba(155, 92, 255, 0.25);
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #ff6b7a, #ff4765);
+  border-color: #ff6b7a;
+  color: #14030c;
+  box-shadow: 0 8px 18px rgba(255, 105, 135, 0.35);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.game-container {
+  position: relative;
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.game-container-inner {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.game-container.fullscreen {
+  position: fixed;
+  inset: 0.75rem;
+  z-index: 50;
+  margin: 0;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.65);
+  background: var(--color-bg-elevated);
+}
+
+.game-container-minimized {
+  height: 120px;
+  overflow: hidden;
+  opacity: 0.65;
+}
+
+.snake-board {
+  display: grid;
+  aspect-ratio: 1 / 1;
+  max-width: min(480px, 100%);
+  max-height: min(480px, 100%);
+  background: radial-gradient(circle at top, #20163a, #05050b);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-soft);
+  overflow: hidden;
+}
+
+.snake-cell {
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.snake-cell-body {
+  background: linear-gradient(135deg, #9b5cff, #5230a8);
+}
+
+.snake-cell-head {
+  background: radial-gradient(circle at 30% 30%, #ffffff, #9b5cff);
+  box-shadow: 0 0 8px rgba(155, 92, 255, 0.7);
+}
+
+.snake-cell-food {
+  background: radial-gradient(circle at 50% 35%, #ffce6b, #ff7b3a);
+  box-shadow: 0 0 6px rgba(255, 190, 120, 0.8);
+}
+
+.footer {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  margin-top: auto;
+}
+
+@media (max-width: 768px) {
+  .app-header,
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .app-tabs,
+  .tabs {
+    padding: 0.75rem 1rem 0.5rem;
+    overflow-x: auto;
+  }
+
+  .app-main,
+  .main-content {
+    padding: 1rem;
+  }
+}
