@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, use } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { io } from "socket.io-client";
 // Let it negotiate first; add transports:['websocket'] later if you want
 const socket = io("http://127.0.0.1:5000", {
@@ -27,6 +27,9 @@ function App() {
 
   // ========== AI CONTROL STATE ==========
   const [controlMode, setControlMode] = useState('human') // 'human', 'qnet', 'ppo'
+
+  // ========== DEVICE STATE ==========
+  const [deviceInfo, setDeviceInfo] = useState(null)
 
   const [params, setParams] = useState({
   qnet:
@@ -74,14 +77,18 @@ function App() {
   useEffect(() => {
     // ========== SOCKET EVENT LISTENERS ==========
     socket.on('game_update', (data) => {
-    // This runs when Python sends game state
-    setSnake(data.snake_position)
-    setFood(data.food_position)
-    setScore(data.score)
-    setEpisode(data.episode)
-    if (data.game_over) {
-      resetGame()
-    }
+      // This runs when Python sends game state
+      setSnake(data.snake_position)
+      setFood(data.food_position)
+      setScore(data.score)
+      setEpisode(data.episode)
+
+      // IMPORTANT: Only reset game on game_over for HUMAN mode
+      // AI modes handle reset internally in the backend - they continue training
+      // across episodes. Calling resetGame() during AI training would stop it!
+      if (data.game_over && controlMode === 'human') {
+        resetGame()
+      }
     })
 
     socket.on('game_reset', (data) => {
@@ -102,7 +109,7 @@ function App() {
       socket.off('game_reset')
       socket.off('set_highscore')
     }
-  }, [isRunning]) // Re-run if AItraining changes
+  }, [isRunning, controlMode]) // Re-run if isRunning or controlMode changes
 
 
   useEffect(() => {
@@ -185,12 +192,14 @@ function App() {
       {/* ========== MAIN CONTENT ========== */}
       <div className="content">
          
-        <GameSettings gridSize={gridSize} setGridSize={setGridSize} 
-        controlMode={controlMode} setControlMode={setControlMode} 
+        <GameSettings gridSize={gridSize} setGridSize={setGridSize}
+        controlMode={controlMode} setControlMode={setControlMode}
         colors={colors} setColors={setColors}
         boardSize={boardSize} setBoardSize={setBoardSize}
         gameSpeed={gameSpeed} setGameSpeed={setGameSpeed}
-        isRunning={isRunning} resetGame={resetGame} />
+        isRunning={isRunning} resetGame={resetGame}
+        setIsRunning={setIsRunning}
+        deviceInfo={deviceInfo} setDeviceInfo={setDeviceInfo} />
 
         <GameBoard gridSize={gridSize} cellSize={cellSize} snake={snake} food={food}
         colors={colors} isRunning={isRunning} setIsRunning={setIsRunning} resetGame={resetGame}/>
