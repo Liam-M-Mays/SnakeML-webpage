@@ -8,14 +8,14 @@ SnakeML is a reinforcement learning playground for experimenting with Snake agen
    - Python 3.10+
    - Node.js 18+
 
-2. **Run the dev helper**
+2. **Run the dev helper (from the project root)**
    ```bash
    python dev.py
    ```
    The script installs Python/Node dependencies (idempotently) and starts:
    - Backend Socket.IO + REST server on `http://127.0.0.1:5000`
    - Frontend Vite dev server on `http://127.0.0.1:3000`
-   - On Windows, ensure `npm`/`npm.cmd` is on your `PATH`; otherwise install Node.js first.
+   - On Windows, ensure `npm`/`npm.cmd` is on your `PATH` (after installing Node.js reopen the terminal so PATH updates take effect).
 
 3. Open the frontend URL and launch a training run.
 

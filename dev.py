@@ -35,7 +35,8 @@ def find_npm() -> list[str]:
         if path:
             return [path]
     raise FileNotFoundError(
-        "npm is not installed or not on PATH. Please install Node.js/npm first."
+        "npm is not installed or not on PATH. Install Node.js from https://nodejs.org, "
+        "reopen your terminal so PATH updates apply, and rerun this command from the repo root."
     )
 
 
