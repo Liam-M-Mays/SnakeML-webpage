@@ -1,0 +1,9 @@
+.model-row {
+  align-items: center;
+  gap: 8px;
+}
+
+.model-actions {
+  display: flex;
+  gap: 6px;
+}

@@ -1,0 +1,13 @@
+.replay-row {
+  cursor: pointer;
+}
+
+.replay-row.active {
+  background: rgba(99, 102, 241, 0.15);
+}
+
+.actions-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}

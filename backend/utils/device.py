@@ -15,7 +15,7 @@ def get_device() -> torch.device:
     4. CPU fallback.
     """
     forced = os.getenv("FORCE_DEVICE")
-    if forced:
+    if forced in ("cpu", "cuda", "mps"):
         return torch.device(forced)
 
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():

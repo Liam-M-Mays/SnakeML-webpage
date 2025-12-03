@@ -1,134 +1,111 @@
-from flask import Flask
-from flask_socketio import SocketIO, emit
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from flask import Flask, jsonify, request
 from flask_cors import CORS
+from flask_socketio import SocketIO
 
-from Session import Session
+# Ensure package imports work when running as script
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
 
-import time
-import logging
-
-# At the top of your Python file, before running the app
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)  # Only show errors, not INFO messages
-
-# If using SocketIO
-logging.getLogger('socketio').setLevel(logging.ERROR)
-logging.getLogger('engineio').setLevel(logging.ERROR)
+from backend.envs.registry import env_metadata, list_envs  # noqa: E402
+from backend.envs.snake import default_reward_config  # noqa: E402
+from backend.training.manager import RunManager  # noqa: E402
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["http://localhost:3000"]}})
+CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "http://127.0.0.1:3000", "*"]}})
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Let Flask-SocketIO auto-pick async mode (will pick "eventlet" if installed)
-socketio = SocketIO(app, cors_allowed_origins=["*"])
-#prob want to make a instance of the game handler that calls the game script functions
-
-session = None
-loop = False
-
-@socketio.on('init')
-def handle_init(data):
-    global session
-    grid_size = data.get('grid_size')
-    AI = data.get('AI_mode')
-    Model = data.get('modelType')
-    parms = data.get('params')
-    session = Session(grid_size=grid_size, AI_mode=AI, model=Model, params=parms)
-    score , food_position, snake_position, game_over = session.get_state()
-    emit('game_update', {
-        'score': score,
-        'food_position': food_position,
-        'snake_position': snake_position,
-        'game_over': game_over,
-        'episode': session.episodes
-    })
-
-@socketio.on('reset_game')
-def handle_reset_game(data):
-    global session
-    if session is None: return
-    score, food_position, snake_position = session.reset()
-    emit('game_update', {
-        'score': score,
-        'food_position': food_position,
-        'snake_position': snake_position,
-        'game_over': True,
-        'episode': session.episodes
-    })
-
-@socketio.on('step')
-def handle_step(data):
-    global session
-    if session is None: return
-    action = data.get('action')
-    score, food_position, snake_position, game_over = session.step(action)
-    if game_over:
-        score, food_position, snake_position = session.reset()
-    emit('game_update', {
-        'score': score,
-        'food_position': food_position,
-        'snake_position': snake_position,
-        'game_over': game_over,
-        'episode': session.episodes
-    })
-    emit('set_highscore', {
-        'highscore': session.highscore
-    })
-
-@socketio.on('AI_step')
-def handle_AI_step():
-    global session
-    if session is None: return
-    score, food_position, snake_position, game_over = session.AI_step()
-    if game_over:
-        score, food_position, snake_position = session.reset()
-    emit('game_update', {
-        'score': score,
-        'food_position': food_position,
-        'snake_position': snake_position,
-        'game_over': False,
-        'episode': session.episodes
-    })
-    emit('set_highscore', {
-        'highscore': session.highscore
-    })
-
-@socketio.on('AI_loop')
-def handle_AI_loop():
-    global session
-    if session is None: return
-    global loop
-    loop = True
-    highscore = session.highscore
-    step = 0
-    total_time = 0
-    while loop: #change to condition
-        step += 1
-        stamp = time.perf_counter()
-        score, food_position, snake_position, game_over = session.AI_step()
-        total_time += (time.perf_counter() - stamp)*1000
-        if game_over:
-            score, food_position, snake_position = session.reset()
-        if total_time > 500:
-            total_time = 0
-            emit('game_update', {
-                'score': score,
-                'food_position': {"x": None, "y": None},
-                'snake_position': [{"x": None, "y": None}],
-                'game_over': False,
-                'episode': session.episodes
-            })
-        if session.highscore > highscore:
-            highscore = session.highscore
-            emit('set_highscore', {
-                'highscore': session.highscore
-            })
-        socketio.sleep(0)  # Small delay to prevent overwhelming the client
-
-@socketio.on('stop_loop')
-def handle_stop_training():
-    global loop
-    loop = False
+MODELS_ROOT = ROOT / "models"
+MODELS_ROOT.mkdir(exist_ok=True)
+run_manager = RunManager(MODELS_ROOT, socketio)
 
 
-if __name__ == '__main__':
-    socketio.run(app, host="127.0.0.1", port=5000, debug=False, use_reloader=True, log_output=False)
+# ----------------------- Environment info -----------------------
+@app.route("/api/envs", methods=["GET"])
+def api_list_envs():
+    return jsonify(run_manager.available_envs())
+
+
+@app.route("/api/envs/<env_name>/metadata", methods=["GET"])
+def api_env_metadata(env_name: str):
+    try:
+        return jsonify(env_metadata(env_name))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
+# ----------------------- Rewards -----------------------
+@app.route("/api/rewards/<env_name>", methods=["GET", "POST"])
+def api_reward(env_name: str):
+    reward_path = MODELS_ROOT / env_name / "default_reward.json"
+    reward_path.parent.mkdir(parents=True, exist_ok=True)
+    if request.method == "GET":
+        if reward_path.exists():
+            return jsonify(json.loads(reward_path.read_text()))
+        if env_name == "snake":
+            return jsonify(default_reward_config())
+        return jsonify({})
+    payload = request.get_json(force=True) or {}
+    reward_path.write_text(json.dumps(payload, indent=2))
+    return jsonify({"status": "saved", "reward_config": payload})
+
+
+# ----------------------- Runs -----------------------
+@app.route("/api/runs", methods=["GET"])
+def api_runs():
+    return jsonify(run_manager.list_runs())
+
+
+@app.route("/api/runs/start", methods=["POST"])
+def api_start_run():
+    data: Any = request.get_json(force=True) or {}
+    run_id = run_manager.start_run(data)
+    return jsonify({"run_id": run_id})
+
+
+@app.route("/api/runs/<env_name>/<run_id>/config", methods=["GET"])
+def api_run_config(env_name: str, run_id: str):
+    cfg_path = MODELS_ROOT / env_name / run_id / "config.json"
+    if not cfg_path.exists():
+        return jsonify({"error": "missing config"}), 404
+    return jsonify(json.loads(cfg_path.read_text()))
+
+
+@app.route("/api/runs/<env_name>/<run_id>/metrics", methods=["GET"])
+def api_run_metrics(env_name: str, run_id: str):
+    return jsonify(run_manager.metrics_for_run(env_name, run_id))
+
+
+@app.route("/api/runs/<env_name>/<run_id>/replays", methods=["GET"])
+def api_run_replays(env_name: str, run_id: str):
+    return jsonify(run_manager.replays_for_run(env_name, run_id))
+
+
+@app.route("/api/runs/<env_name>/<run_id>/replays/<replay_id>", methods=["GET"])
+def api_replay_detail(env_name: str, run_id: str, replay_id: str):
+    data = run_manager.replay_detail(env_name, run_id, replay_id)
+    if data is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(data)
+
+
+@app.route("/api/runs/<env_name>/<run_id>/death_stats", methods=["GET"])
+def api_death_stats(env_name: str, run_id: str):
+    return jsonify(run_manager.death_stats(env_name, run_id))
+
+
+@app.route("/api/runs/<env_name>/<run_id>", methods=["DELETE"])
+def api_delete_run(env_name: str, run_id: str):
+    run_manager.delete_run(env_name, run_id)
+    return jsonify({"status": "deleted"})
+
+
+if __name__ == "__main__":
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
