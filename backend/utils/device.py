@@ -1,5 +1,7 @@
 """Device selection utilities for PyTorch."""
 
+"""Device selection utilities for PyTorch."""
+
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -68,15 +70,19 @@ def get_device_preference() -> str:
 def _resolve_with_details() -> Tuple[torch.device, Dict[str, Any]]:
     available = _get_available_devices()
     force_device = _normalize_device(os.getenv("FORCE_DEVICE"))
+    requested = force_device or (_PREFERRED_DEVICE if _PREFERRED_DEVICE != "auto" else None)
 
     info: Dict[str, Any] = {
         "preference": _PREFERRED_DEVICE,
         "force_device": force_device,
         "available": available,
+        "requested": requested,
+        "requested_available": True,
     }
 
     resolved_type: str
     fallback_reason: Optional[str] = None
+    warning: Optional[str] = None
 
     if force_device:
         if force_device in available:
@@ -115,6 +121,7 @@ def _resolve_with_details() -> Tuple[torch.device, Dict[str, Any]]:
     })
 
     if fallback_reason:
+        warning = fallback_reason
         info["fallback_reason"] = fallback_reason
 
     # Human-friendly naming and extra details
@@ -133,6 +140,11 @@ def _resolve_with_details() -> Tuple[torch.device, Dict[str, Any]]:
         info["name"] = "CPU"
 
     info["details"] = details
+    info["requested_available"] = requested in available if requested else True
+    info["is_available"] = resolved_type in available
+
+    if warning:
+        info["warning"] = warning
     return device, info
 
 

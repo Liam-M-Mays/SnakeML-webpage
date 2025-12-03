@@ -19,7 +19,7 @@ from agents.dqn_agent import DQNAgent
 from agents.ppo_agent import PPOAgent
 from agents.config import validate_config
 from storage import get_storage_manager
-from utils.device import resolve_device
+from utils.device import get_global_device
 
 
 class TrainingSession:
@@ -41,7 +41,7 @@ class TrainingSession:
         self.config["run_id"] = self.run_id
 
         # Get device
-        self.device = resolve_device()
+        self.device = get_global_device()
 
         # Create environment
         env_name = config["env_name"]
