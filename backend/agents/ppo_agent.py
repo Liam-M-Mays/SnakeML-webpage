@@ -271,6 +271,8 @@ class PPOAgent:
         """Load model weights."""
         checkpoint = torch.load(path, map_location=self.device)
         self.network.load_state_dict(checkpoint["network"])
-        self.optimizer.load_state_dict(checkpoint["optimizer"])
+        optimizer_state = checkpoint.get("optimizer")
+        if optimizer_state:
+            self.optimizer.load_state_dict(optimizer_state)
         self.episodes = checkpoint.get("episodes", 0)
         self.entropy_coef = checkpoint.get("entropy_coef", self.entropy_coef)

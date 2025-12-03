@@ -8,6 +8,7 @@ Handles:
 - Model checkpointing
 """
 
+import shutil
 import time
 import uuid
 from typing import Dict, Any, Optional
@@ -25,7 +26,14 @@ from utils.device import resolve_device
 class TrainingSession:
     """Manages a single training session."""
 
-    def __init__(self, config: Dict[str, Any], socketio=None):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        socketio=None,
+        weights_path: Optional[str] = None,
+        initial_state: Optional[Dict[str, Any]] = None,
+        save_config: bool = True,
+    ):
         """
         Initialize training session.
 
@@ -78,7 +86,8 @@ class TrainingSession:
 
         # Storage
         self.storage = get_storage_manager()
-        self.storage.save_config(env_name, self.run_id, config)
+        if save_config:
+            self.storage.save_config(env_name, self.run_id, config)
 
         # Training state
         self.is_running = False
@@ -86,11 +95,16 @@ class TrainingSession:
         self.thread = None
 
         # Stats tracking
-        self.episode_count = 0
-        self.total_steps = 0
-        self.best_score = 0
-        self.recent_scores = []
-        self.recent_rewards = []
+        initial_state = initial_state or {}
+        self.episode_count = initial_state.get("episode_count", 0)
+        self.total_steps = initial_state.get("total_steps", 0)
+        self.best_score = initial_state.get("best_score", 0)
+        self.recent_scores = list(initial_state.get("recent_scores", []))
+        self.recent_rewards = list(initial_state.get("recent_rewards", []))
+
+        # Load weights if provided
+        if weights_path:
+            self.agent.load(weights_path)
 
     def start(self, max_speed=False):
         """Start training in a background thread."""
@@ -259,3 +273,69 @@ class TrainingSession:
             "avg_reward": round(avg_reward, 3),
             "config": self.config,
         }
+
+
+def _build_resume_state(storage, env_name: str, run_id: str) -> Dict[str, Any]:
+    """Construct initial state for resuming training from stored metrics."""
+    metrics = storage.load_metrics(env_name, run_id)
+    if not metrics:
+        return {}
+
+    episode_count = len(metrics)
+    best_score = max((m.get("score", 0) for m in metrics), default=0)
+    total_steps = metrics[-1].get("steps", 0)
+
+    recent_metrics = metrics[-100:]
+    recent_scores = [m.get("score", 0) for m in recent_metrics]
+    recent_rewards = [m.get("reward", 0) for m in recent_metrics]
+
+    return {
+        "episode_count": episode_count,
+        "best_score": best_score,
+        "total_steps": total_steps,
+        "recent_scores": recent_scores,
+        "recent_rewards": recent_rewards,
+    }
+
+
+def create_session_from_run(
+    env_name: str,
+    run_id: str,
+    continue_training: bool,
+    socketio=None,
+) -> TrainingSession:
+    """Create a training session from a saved run."""
+
+    storage = get_storage_manager()
+    config = storage.load_config(env_name, run_id)
+    if not config:
+        raise ValueError(f"Config not found for {env_name}/{run_id}")
+
+    config["env_name"] = env_name
+    weights_path = storage.get_weights_path(env_name, run_id)
+    if not weights_path.exists():
+        raise ValueError(f"Weights not found for {env_name}/{run_id}")
+
+    if continue_training:
+        resume_state = _build_resume_state(storage, env_name, run_id)
+        return TrainingSession(
+            config,
+            socketio=socketio,
+            weights_path=str(weights_path),
+            initial_state=resume_state,
+            save_config=False,
+        )
+
+    # Clone mode: copy weights to a new run id and start fresh metrics
+    new_run_id = str(uuid.uuid4())
+    new_config = {**config, "run_id": new_run_id, "env_name": env_name}
+    new_config.pop("created_at", None)
+
+    new_weights_path = storage.get_weights_path(env_name, new_run_id)
+    shutil.copyfile(weights_path, new_weights_path)
+
+    return TrainingSession(
+        new_config,
+        socketio=socketio,
+        weights_path=str(new_weights_path),
+    )
