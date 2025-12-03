@@ -3,10 +3,11 @@ Configuration schema for RL agents and environments.
 
 This module defines the configuration structures for reward systems,
 including support for both legacy numeric rewards and formula-based rewards.
+It also provides default configurations for different RL algorithms.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 from enum import Enum
 
 
@@ -237,7 +238,7 @@ def validate_reward_config(config: Union[dict, RewardConfig]) -> List[str]:
     Returns:
         List of validation error messages (empty if valid)
     """
-    from backend.utils.safe_eval import validate_formula, SafeFormulaError
+    from utils.safe_eval import validate_formula, SafeFormulaError
 
     errors = []
 
@@ -267,17 +268,8 @@ def validate_reward_config(config: Union[dict, RewardConfig]) -> List[str]:
 
     return errors
 
-"""
-Configuration system for training runs.
 
-Defines the structure for:
-- Run configuration (algorithm, hyperparameters, environment, network)
-- Default configurations for different algorithms
-"""
-
-from typing import Dict, Any
-from dataclasses import dataclass, asdict
-
+# ========== TRAINING CONFIGURATION ==========
 
 def get_default_dqn_config() -> Dict[str, Any]:
     """Get default DQN configuration."""

@@ -1,11 +1,3 @@
-"""Backend environments module."""
-
-from .snake_env import SnakeEnv, make_snake_env
-
-__all__ = [
-    "SnakeEnv",
-    "make_snake_env",
-]
 """
 Environment abstraction for different games.
 
@@ -14,12 +6,21 @@ making it easy to add new games and train RL agents on them.
 """
 
 from .base import BaseEnvironment
-from .snake_env import SnakeEnv
+from .snake_env import SnakeEnv, make_snake_env
 
 # Environment registry
 ENV_REGISTRY = {
     "snake": SnakeEnv,
 }
+
+__all__ = [
+    "BaseEnvironment",
+    "SnakeEnv",
+    "make_snake_env",
+    "create_env",
+    "list_environments",
+    "ENV_REGISTRY",
+]
 
 
 def create_env(env_name, **kwargs):
