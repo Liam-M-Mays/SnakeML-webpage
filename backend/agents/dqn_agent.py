@@ -69,6 +69,7 @@ class DQNAgent:
         self.epsilon_end = config.get("epsilon_end", 0.1)
         self.epsilon_decay = config.get("epsilon_decay", 0.999)
         self.target_update_freq = config.get("target_update_freq", 50)
+        self.max_grad_norm = config.get("max_grad_norm", 10.0)
 
         # Networks
         network_config = config.get("network_config", {"layers": [
@@ -152,7 +153,7 @@ class DQNAgent:
         # Optimize
         self.optimizer.zero_grad()
         loss.backward()
-        nn.utils.clip_grad_norm_(self.q_network.parameters(), 10.0)
+        nn.utils.clip_grad_norm_(self.q_network.parameters(), self.max_grad_norm)
         self.optimizer.step()
 
         # Update target network periodically
@@ -176,16 +177,18 @@ class DQNAgent:
             "target_network": self.target_network.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "episodes": self.episodes,
+            "training_steps": self.training_steps,
             "epsilon": self.epsilon,
         }, path)
 
     def load(self, path: str):
         """Load model weights."""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.q_network.load_state_dict(checkpoint["q_network"])
         self.target_network.load_state_dict(checkpoint["target_network"])
         optimizer_state = checkpoint.get("optimizer")
         if optimizer_state:
             self.optimizer.load_state_dict(optimizer_state)
         self.episodes = checkpoint.get("episodes", 0)
+        self.training_steps = checkpoint.get("training_steps", 0)
         self.epsilon = checkpoint.get("epsilon", self.epsilon_end)

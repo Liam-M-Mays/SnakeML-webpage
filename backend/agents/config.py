@@ -304,6 +304,7 @@ def get_default_dqn_config() -> Dict[str, Any]:
             "epsilon_decay": 0.999,
             "buffer_size": 10000,
             "target_update_freq": 50,
+            "max_grad_norm": 10.0,
         },
     }
 
@@ -343,6 +344,7 @@ def get_default_ppo_config() -> Dict[str, Any]:
             "entropy_coef_end": 0.01,
             "entropy_decay_steps": 1000,
             "n_epochs": 8,
+            "max_grad_norm": 0.5,
         },
     }
 

@@ -115,10 +115,12 @@ class PPOAgent:
         self.buffer_size = config.get("buffer_size", 1000)
         self.clip_range = config.get("clip_range", 0.15)
         self.value_coef = config.get("value_coef", 0.5)
-        self.entropy_coef = config.get("entropy_coef_start", 0.05)
+        self.entropy_coef_start = config.get("entropy_coef_start", 0.05)
+        self.entropy_coef = self.entropy_coef_start
         self.entropy_coef_end = config.get("entropy_coef_end", 0.01)
         self.entropy_decay_steps = config.get("entropy_decay_steps", 1000)
         self.n_epochs = config.get("n_epochs", 8)
+        self.max_grad_norm = config.get("max_grad_norm", 0.5)
 
         # Network
         network_config = config.get("network_config", {"layers": [
@@ -226,7 +228,7 @@ class PPOAgent:
                 # Optimize
                 self.optimizer.zero_grad()
                 loss.backward()
-                nn.utils.clip_grad_norm_(self.network.parameters(), 0.95)
+                nn.utils.clip_grad_norm_(self.network.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 
                 total_policy_loss += policy_loss.item()
@@ -242,7 +244,7 @@ class PPOAgent:
         # Decay entropy coefficient
         self.update_count += 1
         progress = min(1.0, self.update_count / self.entropy_decay_steps)
-        self.entropy_coef = (1 - progress) * config.get("entropy_coef_start", 0.05) + progress * self.entropy_coef_end
+        self.entropy_coef = (1 - progress) * self.entropy_coef_start + progress * self.entropy_coef_end
         self.entropy_coef = max(self.entropy_coef, self.entropy_coef_end)
 
         # Clear buffer
@@ -264,15 +266,19 @@ class PPOAgent:
             "network": self.network.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "episodes": self.episodes,
+            "update_count": self.update_count,
             "entropy_coef": self.entropy_coef,
+            "entropy_coef_start": self.entropy_coef_start,
         }, path)
 
     def load(self, path: str):
         """Load model weights."""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
         self.network.load_state_dict(checkpoint["network"])
         optimizer_state = checkpoint.get("optimizer")
         if optimizer_state:
             self.optimizer.load_state_dict(optimizer_state)
         self.episodes = checkpoint.get("episodes", 0)
+        self.update_count = checkpoint.get("update_count", 0)
         self.entropy_coef = checkpoint.get("entropy_coef", self.entropy_coef)
+        self.entropy_coef_start = checkpoint.get("entropy_coef_start", self.entropy_coef_start)
