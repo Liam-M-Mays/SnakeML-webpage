@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { validateAgentName, validateHyperparameter } from '../utils/validation'
 
 /**
  * AI Settings panel.
@@ -42,6 +43,8 @@ export default function AISettings({
   const [newAgentName, setNewAgentName] = useState('')
   const [newAgentType, setNewAgentType] = useState('dqn')
   const [saveStatus, setSaveStatus] = useState(null)
+  const [nameError, setNameError] = useState(null)
+  const [paramErrors, setParamErrors] = useState({})
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId)
 
@@ -52,8 +55,25 @@ export default function AISettings({
     }
   }, [selectedGame])
 
+  const handleNameChange = (e) => {
+    const value = e.target.value
+    setNewAgentName(value)
+
+    // Validate on change
+    if (value.trim()) {
+      const validation = validateAgentName(value)
+      setNameError(validation.error)
+    } else {
+      setNameError(null)
+    }
+  }
+
   const handleCreate = () => {
-    if (!newAgentName.trim()) return
+    const validation = validateAgentName(newAgentName)
+    if (!validation.valid) {
+      setNameError(validation.error)
+      return
+    }
 
     const params = {}
     Object.entries(DEFAULT_PARAMS[newAgentType]).forEach(([key, config]) => {
@@ -68,12 +88,28 @@ export default function AISettings({
     })
 
     setNewAgentName('')
+    setNameError(null)
     setShowCreateForm(false)
   }
 
   const handleParamChange = (paramKey, value) => {
     if (!selectedAgent) return
-    onUpdateParams(selectedAgentId, paramKey, value)
+
+    const config = selectedAgent.params[paramKey]
+    const validation = validateHyperparameter(value, config)
+
+    if (!validation.valid) {
+      setParamErrors(prev => ({ ...prev, [paramKey]: validation.error }))
+      // Still update with corrected value
+      onUpdateParams(selectedAgentId, paramKey, validation.correctedValue)
+    } else {
+      setParamErrors(prev => {
+        const next = { ...prev }
+        delete next[paramKey]
+        return next
+      })
+      onUpdateParams(selectedAgentId, paramKey, validation.correctedValue)
+    }
   }
 
   const handleSave = () => {
@@ -144,10 +180,12 @@ export default function AISettings({
             type="text"
             placeholder="Agent name..."
             value={newAgentName}
-            onChange={(e) => setNewAgentName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+            onChange={handleNameChange}
+            onKeyDown={(e) => e.key === 'Enter' && !nameError && handleCreate()}
             autoFocus
+            className={nameError ? 'input-error' : ''}
           />
+          {nameError && <span className="error-message">{nameError}</span>}
           <select
             value={newAgentType}
             onChange={(e) => setNewAgentType(e.target.value)}
@@ -156,10 +194,10 @@ export default function AISettings({
             <option value="ppo">PPO</option>
           </select>
           <div className="create-agent-actions">
-            <button onClick={handleCreate} disabled={!newAgentName.trim()}>
+            <button onClick={handleCreate} disabled={!newAgentName.trim() || nameError}>
               Create
             </button>
-            <button onClick={() => setShowCreateForm(false)} className="cancel-btn">
+            <button onClick={() => { setShowCreateForm(false); setNameError(null) }} className="cancel-btn">
               Cancel
             </button>
           </div>
@@ -198,7 +236,9 @@ export default function AISettings({
                 value={config.value}
                 onChange={(e) => handleParamChange(key, parseFloat(e.target.value))}
                 disabled={isTraining || selectedAgent.modelFilename}
+                className={paramErrors[key] ? 'input-error' : ''}
               />
+              {paramErrors[key] && <span className="error-message small">{paramErrors[key]}</span>}
             </div>
           ))}
         </div>

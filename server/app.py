@@ -20,6 +20,12 @@ from flask_cors import CORS
 from games.snake import SnakeEnv
 from server.session import Session
 from server.players import create_player, HumanPlayer, NetworkPlayer
+from server.validation import (
+    validate_model_name,
+    validate_grid_size,
+    validate_hyperparameters,
+    validate_filename
+)
 
 # Models directory
 MODELS_DIR = Path(__file__).parent.parent / 'models'
@@ -30,9 +36,18 @@ logging.getLogger('werkzeug').setLevel(logging.ERROR)
 logging.getLogger('socketio').setLevel(logging.ERROR)
 logging.getLogger('engineio').setLevel(logging.ERROR)
 
+# CORS configuration
+# In production, set CORS_ORIGINS environment variable to restrict origins
+# Example: CORS_ORIGINS=http://localhost:3000,https://myapp.com
+CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000')
+if CORS_ORIGINS == '*':
+    allowed_origins = '*'
+else:
+    allowed_origins = [origin.strip() for origin in CORS_ORIGINS.split(',')]
+
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*")
+CORS(app, resources={r"/*": {"origins": allowed_origins}})
+socketio = SocketIO(app, cors_allowed_origins=allowed_origins)
 
 
 @app.route('/')
@@ -80,12 +95,29 @@ def handle_init(data):
     """
     global session
 
-    grid_size = data.get('grid_size', 10)
+    # Validate grid size
+    grid_size_raw = data.get('grid_size', 10)
+    is_valid, error, grid_size = validate_grid_size(grid_size_raw)
+    if not is_valid:
+        print(f"[INIT] Grid size validation warning: {error}")
+
     control_mode = data.get('control_mode', 'human')
     # Support old 'AI_mode' and 'modelType' for backwards compatibility
     if data.get('AI_mode') and control_mode == 'human':
         control_mode = data.get('modelType', 'dqn')
+
+    # Validate control mode
+    if control_mode not in ('human', 'dqn', 'ppo'):
+        print(f"[INIT] Invalid control mode: {control_mode}, defaulting to human")
+        control_mode = 'human'
+
+    # Validate hyperparameters for AI modes
     params = data.get('params', {})
+    if control_mode in ('dqn', 'ppo'):
+        is_valid, errors, params = validate_hyperparameters(params, control_mode)
+        if not is_valid:
+            print(f"[INIT] Hyperparameter validation warnings: {errors}")
+
     game_type = data.get('game_type', 'snake')
 
     # Create game
@@ -265,10 +297,11 @@ def handle_save_model(data):
     agent_name = data.get('agent_name', name)
     game = data.get('game', 'snake')
 
-    # Sanitize filename
-    safe_name = "".join(c for c in name if c.isalnum() or c in '-_').strip()
-    if not safe_name:
-        safe_name = 'model'
+    # Validate and sanitize model name
+    is_valid, error, safe_name = validate_model_name(name)
+    if not is_valid:
+        emit('save_model_result', {'success': False, 'error': error})
+        return
 
     # Determine network type
     network = session.player.network
@@ -325,6 +358,14 @@ def handle_load_model(data):
         return
 
     filename = data.get('filename', '')
+
+    # Validate filename to prevent path traversal
+    is_valid, error = validate_filename(filename)
+    if not is_valid:
+        print(f"[LOAD] Error: {error}")
+        emit('load_model_result', {'success': False, 'error': error})
+        return
+
     model_path = MODELS_DIR / f"{filename}.pt"
     meta_path = MODELS_DIR / f"{filename}.json"
 
@@ -404,6 +445,12 @@ def handle_delete_model(data):
         - filename: str - Name of model to delete (without extension)
     """
     filename = data.get('filename', '')
+
+    # Validate filename to prevent path traversal
+    is_valid, error = validate_filename(filename)
+    if not is_valid:
+        emit('delete_model_result', {'success': False, 'error': error})
+        return
 
     model_path = MODELS_DIR / f"{filename}.pt"
     meta_path = MODELS_DIR / f"{filename}.json"

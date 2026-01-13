@@ -9,6 +9,7 @@ import { GAMES, getGameList, applyTheme } from './games'
 import Sidebar from './components/Sidebar'
 import AISettings from './components/AISettings'
 import SpeedControl from './components/SpeedControl'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const socket = io("http://127.0.0.1:5000", {
   transports: ["websocket", "polling"],
@@ -375,11 +376,13 @@ function App() {
           {GameSettingsPanel && (
             <div className="game-settings-section">
               <h4>Game Settings</h4>
-              <GameSettingsPanel
-                settings={gameSettings}
-                onChange={setGameSettings}
-                disabled={isRunning}
-              />
+              <ErrorBoundary fallbackMessage="Failed to load game settings.">
+                <GameSettingsPanel
+                  settings={gameSettings}
+                  onChange={setGameSettings}
+                  disabled={isRunning}
+                />
+              </ErrorBoundary>
             </div>
           )}
         </Sidebar>
@@ -387,14 +390,16 @@ function App() {
         {/* Center - Game Area */}
         <div className="game-area">
           {/* Game Board */}
-          {GameBoard && (
-            <GameBoard
-              settings={gameSettings}
-              snake={snake}
-              food={food}
-              cellSize={cellSize}
-            />
-          )}
+          <ErrorBoundary fallbackMessage="Failed to render the game board. Try refreshing the page.">
+            {GameBoard && (
+              <GameBoard
+                settings={gameSettings}
+                snake={snake}
+                food={food}
+                cellSize={cellSize}
+              />
+            )}
+          </ErrorBoundary>
 
           {/* Speed Control - only during training */}
           <SpeedControl
@@ -446,22 +451,24 @@ function App() {
           collapsed={rightCollapsed}
           onToggle={() => setRightCollapsed(!rightCollapsed)}
         >
-          <AISettings
-            agents={agents}
-            selectedAgentId={selectedAgentId}
-            onCreateAgent={handleCreateAgent}
-            onSelectAgent={setSelectedAgentId}
-            onUpdateParams={handleUpdateParams}
-            onTrain={handleTrain}
-            onStopTraining={handleStopTraining}
-            isTraining={isTraining}
-            disabled={isRunning && !isTraining}
-            savedModels={savedModels}
-            onSaveModel={handleSaveModel}
-            onDeleteModel={handleDeleteModel}
-            onRefreshModels={handleRefreshModels}
-            selectedGame={selectedGame}
-          />
+          <ErrorBoundary fallbackMessage="Failed to load AI settings. Try refreshing the page.">
+            <AISettings
+              agents={agents}
+              selectedAgentId={selectedAgentId}
+              onCreateAgent={handleCreateAgent}
+              onSelectAgent={setSelectedAgentId}
+              onUpdateParams={handleUpdateParams}
+              onTrain={handleTrain}
+              onStopTraining={handleStopTraining}
+              isTraining={isTraining}
+              disabled={isRunning && !isTraining}
+              savedModels={savedModels}
+              onSaveModel={handleSaveModel}
+              onDeleteModel={handleDeleteModel}
+              onRefreshModels={handleRefreshModels}
+              selectedGame={selectedGame}
+            />
+          </ErrorBoundary>
         </Sidebar>
       </div>
     </div>
