@@ -1,0 +1,9 @@
+{
+  "name": "DQN",
+  "filename": "DQN_dqn_1768280490",
+  "network_type": "dqn",
+  "episodes": 229,
+  "timestamp": 1768280490,
+  "agent_id": "1768280416309",
+  "game": "snake"
+}

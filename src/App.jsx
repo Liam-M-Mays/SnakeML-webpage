@@ -1,87 +1,184 @@
-import React, { useState, useEffect, useRef, use } from 'react'
-import { io } from "socket.io-client";
-// Let it negotiate first; add transports:['websocket'] later if you want
+import React, { useState, useEffect, useRef } from 'react'
+import { io } from "socket.io-client"
+import './App.css'
+
+// Game registry and theming
+import { GAMES, getGameList, applyTheme } from './games'
+
+// Components
+import Sidebar from './components/Sidebar'
+import AISettings from './components/AISettings'
+import SpeedControl from './components/SpeedControl'
+
 const socket = io("http://127.0.0.1:5000", {
-  // let it negotiate; you can force websocket later if you want
   transports: ["websocket", "polling"],
   withCredentials: false
-});
-import './App.css'
-import { GameSettings, AIsettings, GameBoard } from './CustomComp';
+})
+
+/**
+ * Convert desired absolute direction to relative action.
+ * Actions: 0 = forward, 1 = turn right, 2 = turn left
+ */
+function directionToAction(desiredDir, currentDir) {
+  const [wantDx, wantDy] = desiredDir
+  const [dx, dy] = currentDir
+
+  // Can't reverse (opposite direction)
+  if (wantDx === -dx && wantDy === -dy) return null
+
+  // Forward (same direction)
+  if (wantDx === dx && wantDy === dy) return 0
+
+  // Right turn check: turning right from [dx,dy] gives [-dy, dx]
+  if (wantDx === -dy && wantDy === dx) return 1
+
+  // Left turn check: turning left from [dx,dy] gives [dy, -dx]
+  if (wantDx === dy && wantDy === -dx) return 2
+
+  return null
+}
+
+const KEY_TO_DIRECTION = {
+  'ArrowRight': [1, 0],
+  'ArrowLeft': [-1, 0],
+  'ArrowUp': [0, -1],
+  'ArrowDown': [0, 1]
+}
 
 function App() {
+  // ========== UI STATE ==========
+  const [leftCollapsed, setLeftCollapsed] = useState(false)
+  const [rightCollapsed, setRightCollapsed] = useState(false)
+
+  // ========== GAME SELECTION ==========
+  const [selectedGame, setSelectedGame] = useState('snake')
+  const gameConfig = GAMES[selectedGame]
+  const GameBoard = gameConfig?.Board
+  const GameSettingsPanel = gameConfig?.Settings
+
   // ========== GAME STATE ==========
   const [score, setScore] = useState(0)
   const [highscore, setHighscore] = useState(0)
   const [episode, setEpisode] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
-  const [gridSize, setGridSize] = useState(10)
-  const [boardSize, setBoardSize] = useState(400)
   const [gameSpeed, setGameSpeed] = useState(250)
 
-  const [colors, setColors] = useState({
-  snake: '#4CAF50',    // Green
-  food: '#ff5252',     // Red 
-  background: '#222'   // Dark gray
-  })
+  // Game-specific settings (passed to game's Settings component)
+  const [gameSettings, setGameSettings] = useState(gameConfig?.defaultSettings || {})
 
-  // ========== AI CONTROL STATE ==========
-  const [controlMode, setControlMode] = useState('human') // 'human', 'qnet', 'ppo'
+  // ========== AI AGENT STATE ==========
+  const [agents, setAgents] = useState([])
+  const [selectedAgentId, setSelectedAgentId] = useState(null)
+  const [isTraining, setIsTraining] = useState(false)
+  const [savedModels, setSavedModels] = useState([])
 
-  const [params, setParams] = useState({
-  qnet:
-  {
-    buffer: {min: 0, step: 1, placeholder: "Buffer Size", value: 10000 },
-    batch: {min: 0, step: 1, placeholder: "Batch Size", value: 128 },
-    gamma: {min: 0, step: 1, placeholder: "Gamma", value: 0.9 },
-    decay: {min: 0, step: 0.00001, placeholder: "Decay", value: 0.999 },
-  },
-  ppo:
-  {
-    buffer: {min: 0, step: 1, placeholder: "Buffer Size", value: 1000 },
-    batch: {min: 0, step: 1, placeholder: "Batch Size", value: 128 },
-    gamma: {min: 0, step: .01, placeholder: "Gamma", value: 0.99 },
-    decay: {min: 0, step: 1, placeholder: "Decay Steps", value: 1000 },
-    epoch: {min: 1, step: 1, placeholder: "Epoch", value: 8}
-  }
-  })
+  // ========== SNAKE-SPECIFIC STATE ==========
+  const [snake, setSnake] = useState([{ x: null, y: null }])
+  const [food, setFood] = useState({ x: null, y: null })
 
-  // ========== GAME LOGIC STATE ==========
-  const [snake, setSnake] = useState([{x: null, y: null}]) // Start snake in middle
-  const [food, setFood] = useState({x: null, y: null})
-  const [direction, setDirection] = useState('right')
-  const directionRef = useRef('right') // Use ref for instant updates
+  // Store the desired direction from keypress (absolute direction)
+  const desiredDirectionRef = useRef(null)
+  // Track actual snake direction (updated when we send actions)
+  const currentDirectionRef = useRef([1, 0])
 
-  // ========== GRID CONFIG ==========
-  // Calculate cell size based on grid size to keep board consistent
-  const cellSize = boardSize / gridSize
+  // ========== DERIVED VALUES ==========
+  const selectedAgent = agents.find(a => a.id === selectedAgentId)
+  const isHumanMode = !isTraining
+  const cellSize = (gameSettings.boardSize || 400) / (gameSettings.gridSize || 10)
+
+  // ========== THEME APPLICATION ==========
+  useEffect(() => {
+    applyTheme(selectedGame)
+  }, [selectedGame])
+
+  // ========== GAME CHANGE HANDLER ==========
+  useEffect(() => {
+    const config = GAMES[selectedGame]
+    if (config?.defaultSettings) {
+      setGameSettings(config.defaultSettings)
+    }
+    resetGame()
+  }, [selectedGame])
 
   // ========== GAME FUNCTIONS ==========
-
   const resetGame = () => {
     setIsRunning(false)
+    setIsTraining(false)
     setEpisode(0)
     setHighscore(0)
-    directionRef.current = 'right' // Reset direction
-    setSnake([{x: null, y: null}])
-    setFood({x: null, y: null})
-    if (gameSpeed === 0){
+    desiredDirectionRef.current = null
+    currentDirectionRef.current = [1, 0]  // Snake starts going right
+    setSnake([{ x: null, y: null }])
+    setFood({ x: null, y: null })
+    if (gameSpeed === 0) {
       socket.emit('stop_loop')
       setGameSpeed(250)
     }
   }
 
+  const handlePlayHuman = () => {
+    setIsTraining(false)
+    setIsRunning(true)
+  }
+
+  const handleTrain = () => {
+    if (!selectedAgent) return
+    setIsTraining(true)
+    setIsRunning(true)
+  }
+
+  const handleStopTraining = () => {
+    setIsTraining(false)
+    setIsRunning(false)
+    socket.emit('stop_loop')
+  }
+
+  // ========== AGENT MANAGEMENT ==========
+  const handleCreateAgent = (agent) => {
+    setAgents(prev => [...prev, agent])
+    setSelectedAgentId(agent.id)
+  }
+
+  const handleUpdateParams = (agentId, paramKey, value) => {
+    setAgents(prev => prev.map(agent => {
+      if (agent.id !== agentId) return agent
+      return {
+        ...agent,
+        params: {
+          ...agent.params,
+          [paramKey]: { ...agent.params[paramKey], value }
+        }
+      }
+    }))
+  }
+
+  // ========== MODEL SAVE/LOAD ==========
+  const handleSaveModel = (name, agentId, agentName, game) => {
+    socket.emit('save_model', { name, agent_id: agentId, agent_name: agentName, game })
+  }
+
+  const handleDeleteModel = (filename) => {
+    socket.emit('delete_model', { filename })
+  }
+
+  const handleRefreshModels = () => {
+    socket.emit('list_models')
+  }
+
+  // ========== SOCKET LISTENERS ==========
   useEffect(() => {
-    // ========== SOCKET EVENT LISTENERS ==========
+    // Request saved models on connect
+    socket.emit('list_models')
+
     socket.on('game_update', (data) => {
-    // This runs when Python sends game state
-    setSnake(data.snake_position)
-    setFood(data.food_position)
-    setScore(data.score)
-    setEpisode(data.episode)
-    if (data.game_over) {
-      resetGame()
-    }
+      setSnake(data.snake_position)
+      setFood(data.food_position)
+      setScore(data.score)
+      setEpisode(data.episode)
+      if (data.game_over) {
+        desiredDirectionRef.current = null
+        currentDirectionRef.current = [1, 0]  // Reset for next game
+      }
     })
 
     socket.on('game_reset', (data) => {
@@ -89,118 +186,283 @@ function App() {
       setSnake(data.snake_position)
       setFood(data.food_position)
       setIsRunning(false)
-      directionRef.current = 'right' // Reset direction
+      desiredDirectionRef.current = null
+      currentDirectionRef.current = [1, 0]
     })
 
     socket.on('set_highscore', (data) => {
       setHighscore(data.highscore)
     })
 
-    // Cleanup: remove listeners on unmount
+    // Model save/load listeners
+    socket.on('models_list', (data) => {
+      setSavedModels(data.models || [])
+    })
+
+    socket.on('save_model_result', (data) => {
+      if (data.success) {
+        console.log('Model saved:', data.filename)
+        socket.emit('list_models')  // Refresh list
+      } else {
+        console.error('Save failed:', data.error)
+      }
+    })
+
+    socket.on('load_model_result', (data) => {
+      if (data.success) {
+        console.log('Model loaded:', data.filename)
+      } else {
+        console.error('Load failed:', data.error)
+      }
+    })
+
+    socket.on('delete_model_result', (data) => {
+      if (data.success) {
+        socket.emit('list_models')  // Refresh list
+      }
+    })
+
     return () => {
       socket.off('game_update')
       socket.off('game_reset')
       socket.off('set_highscore')
+      socket.off('models_list')
+      socket.off('save_model_result')
+      socket.off('load_model_result')
+      socket.off('delete_model_result')
     }
-  }, [isRunning]) // Re-run if AItraining changes
+  }, [])
 
-
+  // ========== INIT ON START ==========
+  const initRef = useRef(0)
   useEffect(() => {
     if (!isRunning) return
-      const parms = Object.fromEntries(
-        Object.entries(params[controlMode]).map(([k, d]) => [k, Number(d.value)])
-      );
-      socket.emit('init', {grid_size: gridSize, AI_mode: (controlMode !== 'human'), params: parms, modelType: controlMode})
-  }, [gridSize, isRunning, controlMode, params]) // Re-run if grid size changes
+
+    initRef.current += 1
+    const initCount = initRef.current
+    console.log(`[INIT #${initCount}] Creating session - isTraining=${isTraining}, agent=${selectedAgent?.name}`)
+
+    const controlMode = isTraining ? selectedAgent?.type : 'human'
+    const agentParams = selectedAgent?.params || {}
+    const params = Object.fromEntries(
+      Object.entries(agentParams).map(([k, d]) => [k, Number(d.value)])
+    )
+
+    socket.emit('init', {
+      grid_size: gameSettings.gridSize || 10,
+      control_mode: controlMode,
+      params: params,
+      game_type: selectedGame
+    })
+  }, [isRunning, isTraining, selectedAgent, gameSettings.gridSize, selectedGame])
+
+  // ========== LOAD SAVED MODEL ==========
+  useEffect(() => {
+    if (!isTraining || !selectedAgent?.modelFilename) return
+
+    // Delay to ensure session is initialized
+    const timeout = setTimeout(() => {
+      console.log('Loading saved model:', selectedAgent.modelFilename)
+      socket.emit('load_model', { filename: selectedAgent.modelFilename })
+    }, 500)  // Increased delay to ensure session is ready
+
+    return () => clearTimeout(timeout)
+  }, [isTraining, selectedAgent?.modelFilename])
 
   // ========== GAME LOOP ==========
   useEffect(() => {
-    console.log("Game loop effect triggered. isRunning: " + isRunning + ", gameSpeed: " + gameSpeed + ", controlMode: " + controlMode)
     socket.emit('stop_loop')
     if (!isRunning) return
 
-    if(controlMode == 'human'){
-      const gameInterval = setInterval(async () => {
-        socket.emit('step', { action: directionRef.current })
+    if (!isTraining) {
+      // Human play mode
+      const gameInterval = setInterval(() => {
+        let action = 0 // Default: forward
+        const [dx, dy] = currentDirectionRef.current
+
+        if (desiredDirectionRef.current) {
+          const computed = directionToAction(desiredDirectionRef.current, currentDirectionRef.current)
+          if (computed !== null) {
+            action = computed
+
+            // Update our tracked direction based on the turn
+            if (action === 1) {
+              // Turn right: [dx,dy] -> [-dy, dx]
+              currentDirectionRef.current = [-dy, dx]
+            } else if (action === 2) {
+              // Turn left: [dx,dy] -> [dy, -dx]
+              currentDirectionRef.current = [dy, -dx]
+            }
+          }
+          // Clear desired direction after turn (user needs to press again)
+          // Keep it for forward so holding a direction key keeps going that way
+          if (action === 1 || action === 2) {
+            desiredDirectionRef.current = null
+          }
+        }
+
+        socket.emit('step', { action })
       }, gameSpeed)
       return () => clearInterval(gameInterval)
-    }
-    else if (gameSpeed > 0){
-      const gameInterval = setInterval(async () => {
-        socket.emit('AI_step')
+    } else if (gameSpeed > 0) {
+      // AI training with rendering
+      const gameInterval = setInterval(() => {
+        socket.emit('step', {})
       }, gameSpeed)
       return () => clearInterval(gameInterval)
-    } // Game speed for AI
-    else if (gameSpeed === 0) {
-      console.log('infinity net called')
+    } else if (gameSpeed === 0) {
+      // Max speed training (no render)
       socket.emit('AI_loop')
     }
-  }, [isRunning, gameSpeed, controlMode]) // Dependencies: effect runs when these change
-
-
+  }, [isRunning, gameSpeed, isTraining])
 
   // ========== KEYBOARD CONTROLS ==========
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Only process arrow keys if in human control mode
-      if (controlMode === 'human') {
-        // Prevent reversing direction (can't go right if moving left, etc.)
-        if (e.key === 'ArrowRight' && direction !== 'left') {
-          setDirection('right')
-          directionRef.current = 'right'
-        }
-        if (e.key === 'ArrowLeft' && direction !== 'right') {
-          setDirection('left')
-          directionRef.current = 'left'
-        }
-        if (e.key === 'ArrowUp' && direction !== 'down') {
-          setDirection('up')
-          directionRef.current = 'up'
-        }
-        if (e.key === 'ArrowDown' && direction !== 'up') {
-          setDirection('down')
-          directionRef.current = 'down'
-        }
-      }
+      if (isTraining) return
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return
+
+      e.preventDefault()
+
+      // Store the desired absolute direction
+      // The game loop will compute the relative action
+      desiredDirectionRef.current = KEY_TO_DIRECTION[e.key]
     }
 
-    // Add event listener when component mounts
     window.addEventListener('keydown', handleKeyDown)
-    
-    // Cleanup: remove event listener when component unmounts
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [controlMode, direction]) // Only re-run if controlMode changes
-  
-  
+  }, [isTraining])
 
-  // ========== RENDER COMPONENT ==========
+  // ========== RENDER ==========
+  const gameList = getGameList()
+
   return (
     <div className="app">
-      {/* ========== HEADER ========== */}
+      {/* Header */}
       <header className="header">
-        <h1>Snake Game</h1>
-        <div className="score">Episode: {episode} - Score: {score} - Highscore: {highscore}</div>
+        <h1>ML Playground</h1>
+        <div className="stats">
+          <span>Episode: {episode}</span>
+          <span>Score: {score}</span>
+          <span>Highscore: {highscore}</span>
+        </div>
       </header>
 
-      {/* ========== MAIN CONTENT ========== */}
-      <div className="content">
-         
-        <GameSettings gridSize={gridSize} setGridSize={setGridSize} 
-        controlMode={controlMode} setControlMode={setControlMode} 
-        colors={colors} setColors={setColors}
-        boardSize={boardSize} setBoardSize={setBoardSize}
-        gameSpeed={gameSpeed} setGameSpeed={setGameSpeed}
-        isRunning={isRunning} resetGame={resetGame} />
+      {/* Main Content */}
+      <div className="main-content">
+        {/* Left Sidebar - Games & Settings */}
+        <Sidebar
+          title="Games"
+          side="left"
+          collapsed={leftCollapsed}
+          onToggle={() => setLeftCollapsed(!leftCollapsed)}
+        >
+          {/* Game Selection */}
+          <div className="game-list">
+            {gameList.map(game => (
+              <div
+                key={game.id}
+                className={`game-item ${game.id === selectedGame ? 'selected' : ''} ${game.comingSoon ? 'coming-soon' : ''}`}
+                onClick={() => !game.comingSoon && !isRunning && setSelectedGame(game.id)}
+              >
+                <span className="game-name">{game.name}</span>
+                {game.comingSoon && <span className="badge">Soon</span>}
+              </div>
+            ))}
+          </div>
 
-        <GameBoard gridSize={gridSize} cellSize={cellSize} snake={snake} food={food}
-        colors={colors} isRunning={isRunning} setIsRunning={setIsRunning} resetGame={resetGame}/>
-        
-        {controlMode !== 'human' && !isRunning && (<AIsettings params={params} setParams={setParams} controlMode={controlMode} />)}
-      </div>
+          {/* Game-specific Settings */}
+          {GameSettingsPanel && (
+            <div className="game-settings-section">
+              <h4>Game Settings</h4>
+              <GameSettingsPanel
+                settings={gameSettings}
+                onChange={setGameSettings}
+                disabled={isRunning}
+              />
+            </div>
+          )}
+        </Sidebar>
 
-      {/* ========== INSTRUCTIONS ========== */}
-      <div className="instructions">
-          {controlMode === 'human' && (<p>Use arrow keys to control the snake. Avoid walls and yourself!</p>)}
+        {/* Center - Game Area */}
+        <div className="game-area">
+          {/* Game Board */}
+          {GameBoard && (
+            <GameBoard
+              settings={gameSettings}
+              snake={snake}
+              food={food}
+              cellSize={cellSize}
+            />
+          )}
+
+          {/* Speed Control - only during training */}
+          <SpeedControl
+            speed={gameSpeed}
+            onChange={setGameSpeed}
+            isVisible={isTraining}
+          />
+
+          {/* Game Controls */}
+          <div className="game-controls">
+            {!isRunning ? (
+              <>
+                <button className="play-btn" onClick={handlePlayHuman}>
+                  Play Human
+                </button>
+                {selectedAgent && (
+                  <button className="train-btn" onClick={handleTrain}>
+                    Train AI
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <button className="pause-btn" onClick={() => setIsRunning(false)}>
+                  Pause
+                </button>
+                <button className="reset-btn" onClick={resetGame}>
+                  Reset
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Instructions */}
+          <div className="instructions">
+            {!isTraining && selectedGame === 'snake' && (
+              <p>Use arrow keys to control the snake</p>
+            )}
+            {isTraining && (
+              <p>Set speed to 0 for maximum training speed</p>
+            )}
+          </div>
+        </div>
+
+        {/* Right Sidebar - AI Settings */}
+        <Sidebar
+          title="AI"
+          side="right"
+          collapsed={rightCollapsed}
+          onToggle={() => setRightCollapsed(!rightCollapsed)}
+        >
+          <AISettings
+            agents={agents}
+            selectedAgentId={selectedAgentId}
+            onCreateAgent={handleCreateAgent}
+            onSelectAgent={setSelectedAgentId}
+            onUpdateParams={handleUpdateParams}
+            onTrain={handleTrain}
+            onStopTraining={handleStopTraining}
+            isTraining={isTraining}
+            disabled={isRunning && !isTraining}
+            savedModels={savedModels}
+            onSaveModel={handleSaveModel}
+            onDeleteModel={handleDeleteModel}
+            onRefreshModels={handleRefreshModels}
+            selectedGame={selectedGame}
+          />
+        </Sidebar>
       </div>
     </div>
   )
