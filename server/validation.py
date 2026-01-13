@@ -89,6 +89,14 @@ def validate_hyperparameters(params: Dict[str, Any], network_type: str) -> Tuple
             'gamma': {'min': 0.0, 'max': 1.0, 'default': 0.99},
             'decay': {'min': 100, 'max': 100000, 'default': 1000},
             'epoch': {'min': 1, 'max': 50, 'default': 8},
+        },
+        'mann': {
+            'buffer': {'min': 100, 'max': 100000, 'default': 1000},
+            'batch': {'min': 16, 'max': 512, 'default': 128},
+            'gamma': {'min': 0.0, 'max': 1.0, 'default': 0.99},
+            'decay': {'min': 100, 'max': 100000, 'default': 1000},
+            'epoch': {'min': 1, 'max': 50, 'default': 8},
+            'experts': {'min': 2, 'max': 8, 'default': 4},
         }
     }
 

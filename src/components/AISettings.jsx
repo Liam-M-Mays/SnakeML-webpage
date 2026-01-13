@@ -21,6 +21,14 @@ const DEFAULT_PARAMS = {
     decay: { min: 100, step: 100, label: 'Entropy Decay Steps', value: 1000 },
     epoch: { min: 1, step: 1, label: 'PPO Epochs', value: 8 },
   },
+  mann: {
+    buffer: { min: 100, step: 100, label: 'Buffer Size', value: 1000 },
+    batch: { min: 16, step: 16, label: 'Batch Size', value: 128 },
+    gamma: { min: 0, max: 1, step: 0.01, label: 'Gamma', value: 0.99 },
+    decay: { min: 100, step: 100, label: 'Entropy Decay Steps', value: 1000 },
+    epoch: { min: 1, step: 1, label: 'Training Epochs', value: 8 },
+    experts: { min: 2, max: 8, step: 1, label: 'Num Experts', value: 4 },
+  },
 }
 
 export default function AISettings({
@@ -192,6 +200,7 @@ export default function AISettings({
           >
             <option value="dqn">DQN</option>
             <option value="ppo">PPO</option>
+            <option value="mann">MANN</option>
           </select>
           <div className="create-agent-actions">
             <button onClick={handleCreate} disabled={!newAgentName.trim() || nameError}>

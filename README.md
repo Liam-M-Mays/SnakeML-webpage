@@ -131,6 +131,18 @@ SnakeML/
 | Entropy Decay | Steps for entropy to decay | 1,000 |
 | PPO Epochs | Training epochs per update | 8 |
 
+**MANN (Mixture of Experts)**
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| Buffer Size | Rollout buffer size | 1,000 |
+| Batch Size | Training batch size | 128 |
+| Gamma | Discount factor (0-1) | 0.99 |
+| Entropy Decay | Steps for entropy to decay | 1,000 |
+| Training Epochs | Epochs per update | 8 |
+| Num Experts | Number of expert networks (2-8) | 4 |
+
+MANN uses a Mixture of Experts architecture where multiple expert networks are dynamically blended based on the current game state. A gating network learns which expert to trust for different situations, allowing specialization (e.g., one expert for exploration, another for precise maneuvering).
+
 ## Testing
 
 Run the test suite:

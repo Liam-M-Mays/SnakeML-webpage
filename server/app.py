@@ -107,13 +107,13 @@ def handle_init(data):
         control_mode = data.get('modelType', 'dqn')
 
     # Validate control mode
-    if control_mode not in ('human', 'dqn', 'ppo'):
+    if control_mode not in ('human', 'dqn', 'ppo', 'mann'):
         print(f"[INIT] Invalid control mode: {control_mode}, defaulting to human")
         control_mode = 'human'
 
     # Validate hyperparameters for AI modes
     params = data.get('params', {})
-    if control_mode in ('dqn', 'ppo'):
+    if control_mode in ('dqn', 'ppo', 'mann'):
         is_valid, errors, params = validate_hyperparameters(params, control_mode)
         if not is_valid:
             print(f"[INIT] Hyperparameter validation warnings: {errors}")

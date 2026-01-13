@@ -160,5 +160,15 @@ def create_player(control_mode: str, network_type: str = None,
         )
         return NetworkPlayer(network)
 
+    elif control_mode == 'mann':
+        from networks.mann import MANN
+        network = MANN(
+            input_dim=state_dim,
+            action_dim=3,
+            params=params,
+            use_cnn=use_cnn
+        )
+        return NetworkPlayer(network)
+
     else:
         raise ValueError(f"Unknown control mode: {control_mode}")
