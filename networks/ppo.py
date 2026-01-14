@@ -49,8 +49,8 @@ class PPO(BaseNetwork, nn.Module):
         if device is None:
             if torch.cuda.is_available():
                 device = 'cuda'
-            #elif torch.backends.mps.is_available():
-            #    device = 'mps'
+            elif torch.backends.mps.is_available():
+                device = 'mps'
             else:
                 device = 'cpu'
         self.device = device
@@ -60,8 +60,13 @@ class PPO(BaseNetwork, nn.Module):
         self.buffer_size = int(params.get('buffer', 1000))
         self.batch_size = int(params.get('batch', 128))
         gamma = float(params.get('gamma', 0.99))
-        self.entropy_decay_steps = int(params.get('decay', 1000))
+        self.lr = float(params.get('lr', 0.0002))
         self.ppo_epochs = int(params.get('epoch', 8))
+        self.clip_eps = float(params.get('clip', 0.15))
+        self.entropy_start = float(params.get('ent_start', 0.05))
+        self.entropy_end = float(params.get('ent_end', 0.01))
+        self.entropy_decay_steps = int(params.get('ent_decay', 1000))
+        self.vf_coef = float(params.get('vf_coef', 0.5))
 
         self.use_cnn = use_cnn
         self.action_dim = action_dim
@@ -69,12 +74,7 @@ class PPO(BaseNetwork, nn.Module):
         self._update_count = 0
 
         # Entropy coefficient (decays over time)
-        self.entropy_coef = 0.05
-        self.entropy_start = 0.05
-        self.entropy_end = 0.01
-
-        # PPO clipping
-        self.clip_eps = 0.15
+        self.entropy_coef = self.entropy_start
 
         # Previous state for storing transitions
         self._prev_state = None
@@ -128,17 +128,19 @@ class PPO(BaseNetwork, nn.Module):
             nn.Linear(256, action_dim)
         )
 
-        # Optimizer
-        self.optimizer = optim.Adam(self.parameters(), lr=2e-4)
-
         # Rollout buffer
         self.buffer = RolloutBuffer(gamma)
 
         # Lock to prevent concurrent training (threading issue with socketio)
         self._lock = threading.Lock()
 
-        # Move to device
+        # Move to device BEFORE creating optimizer
+        # (optimizer must capture parameters after they're on the correct device)
         self.to(self.device)
+
+        # Optimizer (created after .to(device) so params are on correct device)
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
+
         print(f"PPO initialized on device: {self.device}")
 
     def forward(self, state: torch.Tensor, board: torch.Tensor = None) -> tuple:
@@ -214,9 +216,12 @@ class PPO(BaseNetwork, nn.Module):
         """Perform PPO update with collected rollout."""
         self.train()
 
+        # Use actual parameter device to avoid string/device mismatches
+        param_device = next(self.parameters()).device
+
         # Get all data from buffer
         states, boards, actions, returns, old_log_probs, old_values = \
-            self.buffer.get_all(device)
+            self.buffer.get_all(param_device)
 
         # Compute advantages
         advantages = returns - old_values
@@ -227,11 +232,11 @@ class PPO(BaseNetwork, nn.Module):
 
         # PPO epochs
         n_samples = len(self.buffer)
-        indices = torch.arange(n_samples, device=device)
+        indices = torch.arange(n_samples, device=param_device)
 
         for _ in range(self.ppo_epochs):
-            # Shuffle indices
-            perm = indices[torch.randperm(n_samples)]
+            # Shuffle indices (must specify device to avoid CPU tensor)
+            perm = indices[torch.randperm(n_samples, device=param_device)]
 
             # Mini-batch updates
             for i in range(0, n_samples, self.batch_size):
@@ -255,7 +260,7 @@ class PPO(BaseNetwork, nn.Module):
                 entropy = dist.entropy().mean()
 
                 # Combined loss
-                loss = policy_loss + 0.5 * value_loss - self.entropy_coef * entropy
+                loss = policy_loss + self.vf_coef * value_loss - self.entropy_coef * entropy
 
                 # Backprop
                 loss.backward()
@@ -275,6 +280,11 @@ class PPO(BaseNetwork, nn.Module):
         progress = min(1.0, self._update_count / self.entropy_decay_steps)
         self.entropy_coef = (1 - progress) * self.entropy_start + progress * self.entropy_end
         self.entropy_coef = max(self.entropy_coef, self.entropy_end)
+
+        # Emit training metrics
+        self._emit_metric('loss', loss.item())
+        self._emit_metric('policy_loss', policy_loss.item())
+        self._emit_metric('value_loss', value_loss.item())
 
         # Clear buffer
         self.buffer.clear()

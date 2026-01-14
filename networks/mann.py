@@ -1,13 +1,12 @@
 """
 Mixture of Experts Neural Network (MANN) implementation.
 
-MANN uses multiple expert networks whose outputs are blended based on
-a gating network that learns which expert to trust for different game states.
+Basic MANN without PPO - uses simple policy gradient updates.
+Multiple expert networks are blended based on a gating network
+that learns which expert to trust for different game states.
 
-Architecture:
-- GatingNetwork: Learns to weight experts based on current state
-- ExpertLinear: Linear layers with K experts whose weights are blended
-- Actor-Critic heads for policy and value estimation
+This is a simpler variant that may work better with random start states
+since it doesn't rely on trajectory-based advantage estimation.
 """
 import torch
 import torch.nn as nn
@@ -17,360 +16,252 @@ import numpy as np
 import threading
 
 from .base import BaseNetwork
-from .replay_buffer import RolloutBuffer
 
 
 class ExpertLinear(nn.Module):
     """
     A linear layer with K experts whose weights are blended based on gating.
-
-    Each expert has its own weight matrix and bias. The gating network
-    provides blend weights that determine how much each expert contributes
-    to the output.
     """
 
     def __init__(self, num_experts: int, in_features: int, out_features: int):
-        """
-        Args:
-            num_experts: Number of expert networks (K)
-            in_features: Input dimension
-            out_features: Output dimension
-        """
         super().__init__()
         self.num_experts = num_experts
         self.in_features = in_features
         self.out_features = out_features
 
-        # K separate weight matrices: shape (K, out_features, in_features)
+        # K separate weight matrices
         self.weight = nn.Parameter(
-            torch.randn(num_experts, out_features, in_features) * 0.01
+            torch.randn(num_experts, out_features, in_features) * np.sqrt(2.0 / in_features)
         )
-        # K separate bias vectors: shape (K, out_features)
         self.bias = nn.Parameter(torch.zeros(num_experts, out_features))
 
     def forward(self, x: torch.Tensor, blend_weights: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass with expert blending.
-
-        Args:
-            x: Input tensor (batch, in_features)
-            blend_weights: Gating weights (batch, num_experts), should sum to 1
-
-        Returns:
-            Output tensor (batch, out_features)
-        """
-        # Blend the weights: (batch, out, in)
-        # einsum: for each batch, weighted sum of expert weights
         blended_weight = torch.einsum('bk,koi->boi', blend_weights, self.weight)
-
-        # Blend the biases: (batch, out)
         blended_bias = torch.einsum('bk,ko->bo', blend_weights, self.bias)
-
-        # Apply the blended linear transform
-        # x: (batch, in) -> need (batch, in, 1) for bmm
-        # blended_weight: (batch, out, in)
-        # output: (batch, out)
         output = torch.bmm(blended_weight, x.unsqueeze(-1)).squeeze(-1) + blended_bias
-
         return output
 
 
 class GatingNetwork(nn.Module):
     """
     Decides how much to trust each expert based on game state.
-
-    Outputs a probability distribution over experts that sums to 1.
     """
 
     def __init__(self, in_features: int, num_experts: int, hidden_dim: int = 64):
-        """
-        Args:
-            in_features: Input state dimension
-            num_experts: Number of experts to weight
-            hidden_dim: Hidden layer size
-        """
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(in_features, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, num_experts),
-            nn.Softmax(dim=-1)  # Weights sum to 1
         )
+        self.temperature = nn.Parameter(torch.ones(1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Compute expert blend weights.
-
-        Args:
-            x: State tensor (batch, in_features)
-
-        Returns:
-            Blend weights (batch, num_experts)
-        """
-        return self.net(x)
+        logits = self.net(x)
+        temp = torch.clamp(self.temperature, min=0.1, max=2.0)
+        return F.softmax(logits / temp, dim=-1)
 
 
 class MANN(BaseNetwork, nn.Module):
     """
-    Mixture of Experts Neural Network for reinforcement learning.
+    Basic Mixture of Experts Neural Network for reinforcement learning.
 
-    Uses multiple expert networks that are dynamically blended based on
-    the current game state. This allows different experts to specialize
-    in different situations (e.g., one expert for exploration, another
-    for precise maneuvering).
+    Uses simple policy gradient (REINFORCE) instead of PPO.
+    This variant is simpler and may work better with random start states
+    since it doesn't rely on trajectory-based advantage estimation.
 
-    Architecture:
-        - Gating network: Computes expert blend weights from state
-        - Expert layers: ExpertLinear layers with blended weights
-        - Policy head: Outputs action logits (actor)
-        - Value head: Outputs state value (critic)
-
-    Training uses PPO-style on-policy updates with the rollout buffer.
+    Each step is treated independently - no rollout buffer needed.
     """
 
     def __init__(self, input_dim: int, action_dim: int = 3, params: dict = None,
                  use_cnn: bool = False, board_size: int = 10, device: str = None):
-        """
-        Args:
-            input_dim: Size of flat state input
-            action_dim: Number of possible actions
-            params: Training hyperparameters dict with keys:
-                - buffer: Rollout buffer size (steps before update, default: 1000)
-                - batch: Mini-batch size (default: 128)
-                - gamma: Discount factor (default: 0.99)
-                - decay: Entropy decay steps (default: 1000)
-                - epoch: Training epochs per update (default: 8)
-                - experts: Number of experts (default: 4)
-            use_cnn: Whether to use CNN for board input (not implemented for MANN)
-            board_size: Size of board grid
-            device: 'cpu', 'cuda', 'mps', or None for auto-detect
-        """
         super().__init__()
 
-        # Auto-detect device
         if device is None:
             if torch.cuda.is_available():
                 device = 'cuda'
+            elif torch.backends.mps.is_available():
+                device = 'cpu'
             else:
                 device = 'cpu'
         self.device = device
 
-        # Parse params with defaults
+        # Parse params
         params = params or {}
-        self.buffer_size = int(params.get('buffer', 1000))
-        self.batch_size = int(params.get('batch', 128))
-        gamma = float(params.get('gamma', 0.99))
-        self.entropy_decay_steps = int(params.get('decay', 1000))
-        self.ppo_epochs = int(params.get('epoch', 8))
+        self.lr = float(params.get('lr', 0.001))
         self.num_experts = int(params.get('experts', 4))
+        self.entropy_coef = float(params.get('entropy', 0.01))
+        self.batch_size = int(params.get('batch', 32))
+        self.gamma = float(params.get('gamma', 0.99))
 
         self.use_cnn = use_cnn
         self.action_dim = action_dim
         self.input_dim = input_dim
         self._episodes = 0
-        self._update_count = 0
 
-        # Entropy coefficient (decays over time)
-        self.entropy_coef = 0.05
-        self.entropy_start = 0.05
-        self.entropy_end = 0.01
+        # Store recent experiences for mini-batch updates
+        self._experience_buffer = []
 
-        # PPO clipping
-        self.clip_eps = 0.15
-
-        # Previous state for storing transitions
+        # Previous state/action for storing transitions
         self._prev_state = None
-        self._prev_board = None
         self._prev_action = None
         self._prev_log_prob = None
-        self._prev_value = None
 
-        # Hidden dimension for expert layers
+        # Store last blend weights for visualization
+        self._last_blend_weights = None
+
+        # Network architecture
         hidden_dim = 128
 
-        # Gating network - decides expert weights based on state
+        # Gating network
         self.gating = GatingNetwork(input_dim, self.num_experts, hidden_dim=64)
 
-        # Expert layers (using weight-blending approach)
+        # Expert layers
         self.expert1 = ExpertLinear(self.num_experts, input_dim, hidden_dim)
+        self.ln1 = nn.LayerNorm(hidden_dim)
         self.expert2 = ExpertLinear(self.num_experts, hidden_dim, hidden_dim)
+        self.ln2 = nn.LayerNorm(hidden_dim)
 
-        # Output heads (also using expert layers for full MoE)
+        # Policy head only (no value head - pure policy gradient)
         self.policy_head = ExpertLinear(self.num_experts, hidden_dim, action_dim)
-        self.value_head = ExpertLinear(self.num_experts, hidden_dim, 1)
-
-        # Optimizer
-        self.optimizer = optim.Adam(self.parameters(), lr=2e-4)
-
-        # Rollout buffer
-        self.buffer = RolloutBuffer(gamma)
 
         # Lock for thread safety
         self._lock = threading.Lock()
 
-        # Move to device
+        # Move to device BEFORE creating optimizer
         self.to(self.device)
+
+        # Optimizer (created after .to(device) so params are on correct device)
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
+
         print(f"MANN initialized on device: {self.device} with {self.num_experts} experts")
 
     def forward(self, state: torch.Tensor, board: torch.Tensor = None) -> tuple:
-        """
-        Forward pass computing value, action logits, and expert blend weights.
+        """Forward pass computing action logits and expert blend weights."""
+        blend = self.gating(state)
 
-        Args:
-            state: Batch of flat states [B, input_dim]
-            board: Batch of board states (unused for MANN)
+        x = self.expert1(state, blend)
+        x = self.ln1(x)
+        x = torch.relu(x)
 
-        Returns:
-            (value, action_logits, blend_weights)
-        """
-        # Get blending weights from gating network
-        blend = self.gating(state)  # (batch, num_experts)
+        x = self.expert2(x, blend)
+        x = self.ln2(x)
+        x = torch.relu(x)
 
-        # Pass through expert layers with blending
-        x = torch.relu(self.expert1(state, blend))
-        x = torch.relu(self.expert2(x, blend))
-
-        # Output heads
         policy_logits = self.policy_head(x, blend)
-        value = self.value_head(x, blend)
 
-        return value, policy_logits, blend
+        return policy_logits, blend
 
     def select_action(self, state: list, board: list, reward: float, done: bool) -> int:
-        """
-        Select action using current policy with expert blending.
-
-        Stores transitions and triggers training when buffer is full.
-        """
+        """Select action and learn from immediate reward."""
         with self._lock:
             device = self.device
 
-            # Store previous transition
+            # Learn from previous transition
             if self._prev_state is not None:
-                self.buffer.push(
-                    self._prev_state, self._prev_board, self._prev_action,
-                    reward, self._prev_log_prob, self._prev_value, done
-                )
+                self._experience_buffer.append({
+                    'state': self._prev_state,
+                    'action': self._prev_action,
+                    'log_prob': self._prev_log_prob,
+                    'reward': reward,
+                    'done': done
+                })
+
+                # Train when we have enough experiences
+                if len(self._experience_buffer) >= self.batch_size:
+                    self._train_step()
 
             # Track episodes
             if done:
                 self._episodes += 1
 
-            # Train when buffer is full
-            if len(self.buffer) >= self.buffer_size:
-                self._train_step(device)
-
             # Sample action from policy
             with torch.no_grad():
                 s = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-
-                value, action_logits, blend = self(s)
+                action_logits, blend = self(s)
                 dist = torch.distributions.Categorical(logits=action_logits)
                 action = dist.sample()
 
                 self._prev_log_prob = dist.log_prob(action).item()
-                self._prev_value = value.squeeze().item()
                 action = action.item()
 
-            # Store for next transition
+                self._last_blend_weights = blend.squeeze().cpu().tolist()
+
             self._prev_state = list(state)
-            self._prev_board = list(board) if board else [[]]
             self._prev_action = action
 
             return action
 
-    def _train_step(self, device: str, grad_clip: float = 0.95):
-        """Perform PPO-style update with collected rollout."""
+    def _train_step(self):
+        """Simple policy gradient update."""
         self.train()
 
-        # Get all data from buffer
-        states, boards, actions, returns, old_log_probs, old_values = \
-            self.buffer.get_all(device)
+        # Compute discounted rewards
+        rewards = []
+        R = 0
+        for exp in reversed(self._experience_buffer):
+            if exp['done']:
+                R = 0
+            R = exp['reward'] + self.gamma * R
+            rewards.insert(0, R)
 
-        # Compute advantages
-        advantages = returns - old_values
-        advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
+        # Normalize rewards
+        rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
+        if rewards.std() > 0:
+            rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
 
-        # Normalize returns for value loss
-        returns_norm = (returns - returns.mean()) / (returns.std(unbiased=False) + 1e-8)
+        # Build tensors
+        states = torch.tensor(
+            [exp['state'] for exp in self._experience_buffer],
+            dtype=torch.float32, device=self.device
+        )
+        actions = torch.tensor(
+            [exp['action'] for exp in self._experience_buffer],
+            dtype=torch.long, device=self.device
+        )
 
-        # Training epochs
-        n_samples = len(self.buffer)
-        indices = torch.arange(n_samples, device=device)
+        # Forward pass
+        action_logits, blend = self(states)
+        dist = torch.distributions.Categorical(logits=action_logits)
+        log_probs = dist.log_prob(actions)
 
-        for _ in range(self.ppo_epochs):
-            # Shuffle indices
-            perm = indices[torch.randperm(n_samples)]
+        # Policy gradient loss (REINFORCE)
+        policy_loss = -(log_probs * rewards).mean()
 
-            # Mini-batch updates
-            for i in range(0, n_samples, self.batch_size):
-                mb_idx = perm[i:i + self.batch_size]
+        # Entropy bonus
+        entropy = dist.entropy().mean()
 
-                # Forward pass
-                value, action_logits, blend = self(states[mb_idx])
-                dist = torch.distributions.Categorical(logits=action_logits)
-                new_log_probs = dist.log_prob(actions[mb_idx])
+        # Load balancing (prevent expert collapse)
+        avg_blend = blend.mean(dim=0)
+        max_usage = avg_blend.max()
+        load_balance_loss = torch.relu(max_usage - 0.8) ** 2
 
-                # Policy loss (clipped objective)
-                ratio = torch.exp(new_log_probs - old_log_probs[mb_idx].detach())
-                surr1 = ratio * advantages[mb_idx]
-                surr2 = torch.clamp(ratio, 1 - self.clip_eps, 1 + self.clip_eps) * advantages[mb_idx]
-                policy_loss = -torch.min(surr1, surr2).mean()
+        # Combined loss
+        loss = policy_loss - self.entropy_coef * entropy + 0.1 * load_balance_loss
 
-                # Value loss
-                value_loss = F.smooth_l1_loss(value.view(-1), returns_norm[mb_idx])
+        # Backprop
+        self.optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.parameters(), 1.0)
+        self.optimizer.step()
 
-                # Entropy bonus (encourages exploration)
-                entropy = dist.entropy().mean()
-
-                # Expert diversity loss - encourage using multiple experts
-                # Penalize if gating concentrates on single expert
-                expert_entropy = -(blend * (blend + 1e-8).log()).sum(dim=-1).mean()
-                diversity_bonus = 0.01 * expert_entropy
-
-                # Combined loss
-                loss = policy_loss + 0.5 * value_loss - self.entropy_coef * entropy - diversity_bonus
-
-                # Backprop
-                self.optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                if grad_clip:
-                    nn.utils.clip_grad_norm_(self.parameters(), grad_clip)
-                self.optimizer.step()
-
-                # Early stopping if KL divergence is too high
-                with torch.no_grad():
-                    approx_kl = (old_log_probs[mb_idx] - new_log_probs).mean()
-                    if approx_kl.item() > 0.02:
-                        break
-
-        # Decay entropy coefficient
-        self._update_count += 1
-        progress = min(1.0, self._update_count / self.entropy_decay_steps)
-        self.entropy_coef = (1 - progress) * self.entropy_start + progress * self.entropy_end
-        self.entropy_coef = max(self.entropy_coef, self.entropy_end)
+        # Emit metrics
+        self._emit_metric('loss', loss.item())
+        self._emit_metric('policy_loss', policy_loss.item())
+        avg_weights = blend.mean(dim=0).cpu().tolist()
+        self._emit_metric('expert_weights', 0, {'weights': avg_weights})
 
         # Clear buffer
-        self.buffer.clear()
-
-    def get_expert_weights(self, state: list) -> list:
-        """
-        Get the current expert blend weights for visualization.
-
-        Args:
-            state: Flat state features
-
-        Returns:
-            List of expert weights (sums to 1)
-        """
-        with torch.no_grad():
-            s = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
-            blend = self.gating(s)
-            return blend.squeeze().cpu().tolist()
+        self._experience_buffer.clear()
 
     @property
     def episode_count(self) -> int:
         return self._episodes
+
+    @property
+    def last_blend_weights(self) -> list:
+        return self._last_blend_weights or [1.0 / self.num_experts] * self.num_experts
 
     def save(self, path: str):
         """Save network state."""
@@ -378,12 +269,11 @@ class MANN(BaseNetwork, nn.Module):
             'model': self.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'episodes': self._episodes,
-            'update_count': self._update_count,
-            'entropy_coef': self.entropy_coef,
             'num_experts': self.num_experts,
             'input_dim': self.input_dim,
             'action_dim': self.action_dim,
         }, path)
+        print(f"MANN model saved: {self._episodes} episodes, {self.num_experts} experts")
 
     def load(self, path: str):
         """Load network state."""
@@ -391,5 +281,4 @@ class MANN(BaseNetwork, nn.Module):
         self.load_state_dict(checkpoint['model'])
         self.optimizer.load_state_dict(checkpoint['optimizer'])
         self._episodes = checkpoint.get('episodes', 0)
-        self._update_count = checkpoint.get('update_count', 0)
-        self.entropy_coef = checkpoint.get('entropy_coef', self.entropy_end)
+        print(f"MANN model loaded: {self._episodes} episodes")

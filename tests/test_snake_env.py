@@ -129,7 +129,7 @@ class TestSnakeEnvStep:
         state, reward, done, info = env.step(0)  # Forward into wall
         assert done
         assert env.game_over
-        assert reward == env.REWARD_WALL
+        assert reward == env.reward_config['wall']
 
     def test_self_collision_ends_game(self):
         """Test that hitting self ends the game."""
@@ -146,7 +146,7 @@ class TestSnakeEnvStep:
         state, reward, done, info = env.step(0)  # Forward into body
         assert done
         assert env.game_over
-        assert reward == env.REWARD_SELF
+        assert reward == env.reward_config['self']
 
     def test_eating_food_increases_score(self):
         """Test that eating food increases score."""
@@ -182,13 +182,23 @@ class TestSnakeEnvStateForNetwork:
         assert all(isinstance(x, (int, float)) for x in flat_state)
 
     def test_state_contains_expected_features(self):
-        """Test that state contains the expected features."""
-        env = SnakeEnv(grid_size=10, vision=0, seg_count=5)
+        """Test that state contains the expected features based on input config."""
+        # Use explicit input config to test specific feature counts
+        inputs = {
+            'foodDirection': True,      # 2 values
+            'pathDistance': True,       # 1 value
+            'currentDirection': True,   # 2 values
+            'hunger': True,             # 1 value
+            'segments': True,
+            'segmentCount': 5,          # 5 * 2 = 10 values
+            'danger': True,
+            'visionRange': 0,           # 3 values (L/R/F mode)
+            'snakeLength': False,
+        }
+        env = SnakeEnv(grid_size=10, inputs=inputs)
         flat_state, _ = env.get_state_for_network()
-        # food_dx, food_dy, dir_x, dir_y, hunger (5)
-        # + segments (seg_count * 2 = 10)
-        # + danger (4 for vision=0)
-        expected_length = 5 + 10 + 4
+        # food_dir(2) + path_dist(1) + dir(2) + hunger(1) + segments(10) + danger(3) = 19
+        expected_length = 2 + 1 + 2 + 1 + 10 + 3
         assert len(flat_state) == expected_length
 
     def test_cnn_mode_returns_board(self):

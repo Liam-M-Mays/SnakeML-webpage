@@ -4,6 +4,7 @@ Base class for all neural network implementations.
 This ensures every network (DQN, PPO, etc.) has the same interface.
 """
 from abc import ABC, abstractmethod
+from typing import Callable, Optional
 
 
 class BaseNetwork(ABC):
@@ -13,6 +14,30 @@ class BaseNetwork(ABC):
     This allows the Session/Player to work with any network type
     without knowing the specific implementation details.
     """
+
+    # Metrics callback - set by session to receive training metrics
+    _metrics_callback: Optional[Callable] = None
+
+    def set_metrics_callback(self, callback: Callable):
+        """
+        Set a callback to receive training metrics.
+
+        Args:
+            callback: Function(metric_type: str, value: float, extra: dict)
+        """
+        self._metrics_callback = callback
+
+    def _emit_metric(self, metric_type: str, value: float, extra: dict = None):
+        """
+        Emit a metric to the callback if set.
+
+        Args:
+            metric_type: 'loss', 'policy_loss', 'value_loss', 'expert_weights'
+            value: The metric value
+            extra: Additional data (e.g., expert weights list)
+        """
+        if self._metrics_callback:
+            self._metrics_callback(metric_type, value, extra or {})
 
     @abstractmethod
     def select_action(self, state: list, board: list, reward: float, done: bool) -> int:

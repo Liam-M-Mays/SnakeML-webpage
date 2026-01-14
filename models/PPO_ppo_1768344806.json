@@ -1,0 +1,9 @@
+{
+  "name": "PPO",
+  "filename": "PPO_ppo_1768344806",
+  "network_type": "ppo",
+  "episodes": 11082,
+  "timestamp": 1768344806,
+  "agent_id": "1768344215515",
+  "game": "snake"
+}

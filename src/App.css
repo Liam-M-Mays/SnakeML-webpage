@@ -58,6 +58,11 @@ body {
   font-weight: bold;
 }
 
+.stats .stat-disabled {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* ========== MAIN CONTENT ========== */
 .main-content {
   display: flex;
@@ -214,9 +219,10 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 20px;
   background: var(--bg-dark);
+  overflow-y: auto;
 }
 
 /* ========== GAME BOARD ========== */
@@ -230,15 +236,39 @@ body {
 
 .cell {
   background-color: var(--grid-bg, #222);
+  position: relative;
 }
 
 .cell.snake {
   background-color: var(--snake-color, #4CAF50);
+  position: relative;
+  transition: transform 0.05s ease;
+}
+
+.cell.snake-head {
+  position: relative;
+  z-index: 2;
+}
+
+.cell.snake-tail {
+  opacity: 0.85;
+}
+
+.snake-eye {
+  pointer-events: none;
+  transition: all 0.1s ease;
 }
 
 .cell.food {
   background-color: var(--food-color, #ff5252);
   border-radius: 50%;
+  animation: food-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 8px var(--food-color, #ff5252);
+}
+
+@keyframes food-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 1; }
+  50% { transform: scale(0.95); opacity: 0.9; }
 }
 
 /* ========== SPEED CONTROL ========== */
@@ -499,6 +529,41 @@ body {
   cursor: not-allowed;
 }
 
+/* Device Selection */
+.device-select {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border-color);
+}
+
+.device-select select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.device-select select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.device-switching {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-top: 4px;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 /* ========== AI TRAIN BUTTON ========== */
 .ai-settings .train-btn {
   width: 100%;
@@ -620,6 +685,73 @@ body {
   height: 35px;
   padding: 2px;
   cursor: pointer;
+}
+
+/* Toggle checkbox items */
+.setting-item.toggle-item label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.setting-item.toggle-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.setting-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Sub-settings (indented child settings) */
+.setting-item.sub-setting {
+  margin-left: 24px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-color);
+}
+
+/* Reward text inputs */
+.setting-item.reward-input {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.setting-item.reward-input label {
+  flex: 1;
+  margin: 0;
+}
+
+.reward-text-input {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.reward-text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.reward-text-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.setting-item.reward-input .setting-hint {
+  flex-basis: 100%;
+  margin-top: -5px;
 }
 
 /* ========== MODEL SAVE/LOAD ========== */
@@ -857,4 +989,172 @@ body {
 
 .retry-btn:hover {
   background: var(--accent-hover);
+}
+
+/* ========== TRAINING CHARTS ========== */
+.training-charts-container {
+  width: 100%;
+  max-width: 900px;
+  margin: 20px auto;
+  padding: 15px;
+  background: var(--bg-panel);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.training-charts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.training-charts-header h4 {
+  color: var(--accent);
+  font-size: 1rem;
+  margin: 0;
+}
+
+.episode-badge {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* Charts row - side by side */
+.charts-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.chart-panel {
+  background: #1a1a2e;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #333;
+}
+
+/* Expert weights row - full width below */
+.expert-weights-row {
+  background: #1a1a2e;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #333;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .charts-row {
+    grid-template-columns: 1fr;
+  }
+
+  .training-charts-container {
+    margin: 15px 10px;
+    padding: 10px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1100px) {
+  .charts-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ========== INPUT VISUALIZATION ========== */
+.input-visualization {
+  width: 100%;
+  max-width: 400px;
+  margin: 10px auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.input-viz-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.input-viz-header:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.toggle-icon {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.input-viz-content {
+  padding: 10px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feature-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.feature-group:last-child {
+  border-bottom: none;
+}
+
+.feature-name {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.feature-values {
+  display: flex;
+  gap: 10px;
+}
+
+.feature-value {
+  font-family: monospace;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.feature-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+/* Segment values styling */
+.segments-group {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.segments-values {
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.segment-value {
+  font-size: 0.7rem;
+  padding: 2px 4px;
+  background: rgba(150, 150, 150, 0.2);
+  border-radius: 3px;
 }

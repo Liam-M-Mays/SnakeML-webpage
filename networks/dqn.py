@@ -58,13 +58,16 @@ class DQN(BaseNetwork, nn.Module):
         buffer_size = int(params.get('buffer', 10000))
         self.batch_size = int(params.get('batch', 128))
         self.gamma = float(params.get('gamma', 0.9))
+        self.lr = float(params.get('lr', 0.001))
         self.epsilon_decay = float(params.get('decay', 0.999))
+        self.epsilon_start = float(params.get('eps_start', 1.0))
+        self.epsilon_end = float(params.get('eps_end', 0.1))
         self.target_update_freq = int(params.get('target_update', 50))
 
         self.use_cnn = use_cnn
         self.action_dim = action_dim
         self._episodes = 0
-        self.epsilon = 1.0
+        self.epsilon = self.epsilon_start
 
         # Previous state for storing transitions
         self._prev_state = None
@@ -112,20 +115,21 @@ class DQN(BaseNetwork, nn.Module):
             nn.Linear(256, action_dim)
         )
 
-        # Optimizer
-        self.optimizer = optim.Adam(self.parameters(), lr=1e-3)
-
         # Replay buffer
         self.replay = ReplayBuffer(buffer_size)
 
         # Lock to prevent concurrent training (threading issue with socketio)
         self._lock = threading.Lock()
 
+        # Move to device BEFORE creating optimizer and target network
+        self.to(self.device)
+
+        # Optimizer (created after .to(device) so params are on correct device)
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr)
+
         # Target network (copy of this network, updated periodically)
         self._create_target_network(input_dim, action_dim, use_cnn)
 
-        # Move to device
-        self.to(self.device)
         print(f"DQN initialized on device: {self.device}")
 
     def _create_target_network(self, input_dim, action_dim, use_cnn):
@@ -209,7 +213,7 @@ class DQN(BaseNetwork, nn.Module):
                 self._train_step(device)
 
             # Decay epsilon
-            self.epsilon = max(0.1, self.epsilon * self.epsilon_decay)
+            self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
             return action
 
@@ -239,6 +243,9 @@ class DQN(BaseNetwork, nn.Module):
         if grad_clip:
             nn.utils.clip_grad_norm_(self.parameters(), grad_clip)
         self.optimizer.step()
+
+        # Emit training metrics
+        self._emit_metric('loss', loss.item())
 
     def _update_target(self):
         """Copy online network weights to target network."""

@@ -18,11 +18,15 @@ export const GAMES = {
     ...snake.config,
     Board: snake.Board,
     Settings: snake.Settings,
+    useGameController: snake.useGameController,
+    InputVisualization: snake.InputVisualization,
   },
   tictactoe: {
     ...tictactoe.config,
     Board: tictactoe.Board,
     Settings: tictactoe.Settings,
+    useGameController: tictactoe.useGameController,
+    InputVisualization: null,  // TicTacToe doesn't have input visualization
   },
 }
 

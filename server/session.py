@@ -6,9 +6,12 @@ A Session ties together a Game and a Player, handling:
 - Action routing (player -> game)
 - Score tracking
 - Episode counting
+- Metrics collection
 """
+from typing import Callable, Optional
 from games.base import GameEnv
-from .players import Player
+from .players import Player, NetworkPlayer
+from .metrics import MetricsCollector
 
 
 class Session:
@@ -29,6 +32,39 @@ class Session:
         self.player = player
         self.highscore = 0
         self._episode_count = 0
+        self._track_highscore = True  # Can be disabled for random start state
+
+        # Metrics collection
+        self.metrics = MetricsCollector()
+        self._metrics_emit_callback: Optional[Callable] = None
+
+        # Wire up network metrics callback if AI player
+        if isinstance(player, NetworkPlayer):
+            player.network.set_metrics_callback(self._on_network_metric)
+
+    def set_metrics_callback(self, callback: Callable):
+        """Set callback for emitting metrics to frontend."""
+        self._metrics_emit_callback = callback
+
+    def set_track_highscore(self, enabled: bool):
+        """
+        Enable or disable high score tracking.
+
+        When disabled (e.g., for random start state), high score won't update.
+        When re-enabled, high score tracking resumes (preserves existing value).
+        """
+        self._track_highscore = enabled
+
+    def _on_network_metric(self, metric_type: str, value: float, extra: dict):
+        """Handle metrics from the network."""
+        if metric_type == 'loss':
+            self.metrics.on_train_step(value)
+        elif metric_type == 'policy_loss':
+            self.metrics.on_train_step(value, policy_loss=value)
+        elif metric_type == 'value_loss':
+            self.metrics.on_train_step(value, value_loss=value)
+        elif metric_type == 'expert_weights':
+            self.metrics.on_expert_weights(extra.get('weights', []))
 
     def tick(self) -> dict:
         """
@@ -40,7 +76,8 @@ class Session:
         3. Execute action in game
         4. Inform player of result
         5. Handle episode ending
-        6. Return state for frontend
+        6. Collect metrics
+        7. Return state for frontend
 
         Returns:
             dict: Game state for frontend display
@@ -57,13 +94,17 @@ class Session:
         # Inform player of result (for AI learning)
         self.player.on_result(reward, done)
 
-        # Track scores
-        if game_state['score'] > self.highscore:
+        # Collect step metrics
+        self.metrics.on_step(reward)
+
+        # Track high score (only if enabled)
+        if self._track_highscore and game_state['score'] > self.highscore:
             self.highscore = game_state['score']
 
         # Handle episode ending
         if done:
             self._episode_count += 1
+            self.metrics.on_episode_end(game_state['score'])
 
         return game_state
 
@@ -80,16 +121,13 @@ class Session:
         """
         Get current game state without stepping.
 
+        Uses the game's get_frontend_state() for game-specific state,
+        making this method game-agnostic.
+
         Returns:
             dict: Current game state for frontend
         """
-        state, board = self.game.get_state_for_network()
-        return {
-            'score': self.game.score,
-            'food_position': self.game.food,
-            'snake_position': self.game.snake,
-            'game_over': self.game.game_over
-        }
+        return self.game.get_frontend_state()
 
     @property
     def episodes(self) -> int:

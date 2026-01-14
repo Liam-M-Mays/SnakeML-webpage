@@ -123,16 +123,17 @@ class NetworkPlayer(Player):
 # Factory function for creating players
 def create_player(control_mode: str, network_type: str = None,
                   params: dict = None, state_dim: int = None,
-                  use_cnn: bool = False) -> Player:
+                  use_cnn: bool = False, device: str = None) -> Player:
     """
     Create a player based on control mode.
 
     Args:
-        control_mode: 'human', 'dqn', or 'ppo'
+        control_mode: 'human', 'dqn', 'ppo', 'mann', or 'mapo'
         network_type: Network type (redundant with control_mode, kept for compatibility)
         params: Network hyperparameters
         state_dim: Input dimension for network (required for AI modes)
         use_cnn: Whether to use CNN
+        device: Compute device ('cpu', 'cuda', 'mps') or None for auto-detect
 
     Returns:
         Player instance
@@ -146,7 +147,8 @@ def create_player(control_mode: str, network_type: str = None,
             input_dim=state_dim,
             action_dim=3,
             params=params,
-            use_cnn=use_cnn
+            use_cnn=use_cnn,
+            device=device
         )
         return NetworkPlayer(network)
 
@@ -156,7 +158,8 @@ def create_player(control_mode: str, network_type: str = None,
             input_dim=state_dim,
             action_dim=3,
             params=params,
-            use_cnn=use_cnn
+            use_cnn=use_cnn,
+            device=device
         )
         return NetworkPlayer(network)
 
@@ -166,7 +169,19 @@ def create_player(control_mode: str, network_type: str = None,
             input_dim=state_dim,
             action_dim=3,
             params=params,
-            use_cnn=use_cnn
+            use_cnn=use_cnn,
+            device=device
+        )
+        return NetworkPlayer(network)
+
+    elif control_mode == 'mapo':
+        from networks.mapo import MAPO
+        network = MAPO(
+            input_dim=state_dim,
+            action_dim=3,
+            params=params,
+            use_cnn=use_cnn,
+            device=device
         )
         return NetworkPlayer(network)
 

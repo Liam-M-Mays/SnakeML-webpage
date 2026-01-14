@@ -94,3 +94,17 @@ class GameEnv(ABC):
         Default is True (real-time like Snake).
         """
         return True
+
+    @abstractmethod
+    def get_frontend_state(self) -> dict:
+        """
+        Get game state in format suitable for frontend display.
+
+        The structure is game-specific - the frontend game module
+        knows how to interpret it. This allows each game to define
+        its own state format without the Session/Server knowing the details.
+
+        Returns:
+            dict: Game-specific state for frontend rendering
+        """
+        pass
