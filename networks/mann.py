@@ -264,21 +264,40 @@ class MANN(BaseNetwork, nn.Module):
         return self._last_blend_weights or [1.0 / self.num_experts] * self.num_experts
 
     def save(self, path: str):
-        """Save network state."""
+        """Save network state including all weights and training state."""
         torch.save({
             'model': self.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'episodes': self._episodes,
-            'num_experts': self.num_experts,
-            'input_dim': self.input_dim,
-            'action_dim': self.action_dim,
+            # Save config for validation on load
+            'config': {
+                'num_experts': self.num_experts,
+                'input_dim': self.input_dim,
+                'action_dim': self.action_dim,
+                'lr': self.lr,
+                'entropy_coef': self.entropy_coef,
+            }
         }, path)
-        print(f"MANN model saved: {self._episodes} episodes, {self.num_experts} experts")
+        print(f"[MANN] Saved model: {self._episodes} episodes, {self.num_experts} experts")
 
     def load(self, path: str):
-        """Load network state."""
-        checkpoint = torch.load(path, weights_only=False, map_location=self.device)
+        """Load network state with proper device mapping."""
+        # Load checkpoint to the correct device
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+
+        # Load model weights
         self.load_state_dict(checkpoint['model'])
+
+        # Load optimizer state
         self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+        # Move optimizer internal state tensors to correct device
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+
+        # Restore training state
         self._episodes = checkpoint.get('episodes', 0)
-        print(f"MANN model loaded: {self._episodes} episodes")
+
+        print(f"[MANN] Loaded model: {self._episodes} episodes")

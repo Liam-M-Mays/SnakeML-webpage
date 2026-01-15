@@ -294,20 +294,46 @@ class PPO(BaseNetwork, nn.Module):
         return self._episodes
 
     def save(self, path: str):
-        """Save network state."""
+        """Save network state including all weights and training state."""
         torch.save({
             'model': self.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'episodes': self._episodes,
             'update_count': self._update_count,
             'entropy_coef': self.entropy_coef,
+            # Save config for validation on load
+            'config': {
+                'action_dim': self.action_dim,
+                'buffer_size': self.buffer_size,
+                'batch_size': self.batch_size,
+                'lr': self.lr,
+                'ppo_epochs': self.ppo_epochs,
+                'clip_eps': self.clip_eps,
+                'use_cnn': self.use_cnn,
+            }
         }, path)
 
     def load(self, path: str):
-        """Load network state."""
-        checkpoint = torch.load(path, weights_only=False)
+        """Load network state with proper device mapping."""
+        # Load checkpoint to the correct device
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+
+        # Load model weights
         self.load_state_dict(checkpoint['model'])
+
+        # Load optimizer state
         self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+        # Move optimizer internal state tensors to correct device
+        # (Adam stores momentum buffers that need to be on the same device as params)
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+
+        # Restore training state
         self._episodes = checkpoint.get('episodes', 0)
         self._update_count = checkpoint.get('update_count', 0)
         self.entropy_coef = checkpoint.get('entropy_coef', self.entropy_end)
+
+        print(f"[PPO] Loaded model: {self._episodes} episodes, {self._update_count} updates")

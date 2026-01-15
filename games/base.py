@@ -6,7 +6,7 @@ Any class inheriting from GameEnv MUST implement all methods marked with @abstra
 If you forget to implement one, Python will raise an error when you try to create an instance.
 
 Example:
-    class TicTacToeEnv(GameEnv):
+    class SnakeEnv(GameEnv):
         def reset(self):
             ...  # Must implement this
         def step(self, action):
@@ -72,9 +72,8 @@ class GameEnv(ABC):
         """
         Number of possible actions in this game.
 
-        Examples:
+        Example:
             - Snake with relative movement: 3 (forward, left, right)
-            - Tic-tac-toe: 9 (one per cell)
         """
         pass
 
@@ -82,7 +81,7 @@ class GameEnv(ABC):
     def player_count(self) -> int:
         """
         Number of players in this game. Override for multiplayer games.
-        Default is 1 (single-player like Snake).
+        Default is 1 (single-player).
         """
         return 1
 
@@ -90,8 +89,7 @@ class GameEnv(ABC):
     def is_realtime(self) -> bool:
         """
         Whether this game runs in real-time (continuous loop) or turn-based.
-        Override and return False for turn-based games like chess/tic-tac-toe.
-        Default is True (real-time like Snake).
+        Default is True (real-time).
         """
         return True
 

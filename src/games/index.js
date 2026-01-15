@@ -1,57 +1,28 @@
 /**
- * Game Registry
+ * Snake Game Exports
  *
- * Central registry for all games. To add a new game:
- * 1. Create folder: src/games/yourgame/
- * 2. Add config.js, Board.jsx, Settings.jsx
- * 3. Import and add to GAMES object below
- *
- * Each game is self-contained and doesn't know about other games.
+ * Re-exports all Snake game components for easy importing.
  */
 
 import * as snake from './snake'
-import * as tictactoe from './tictactoe'
 
-// Registry of all available games
-export const GAMES = {
-  snake: {
-    ...snake.config,
-    Board: snake.Board,
-    Settings: snake.Settings,
-    useGameController: snake.useGameController,
-    InputVisualization: snake.InputVisualization,
-  },
-  tictactoe: {
-    ...tictactoe.config,
-    Board: tictactoe.Board,
-    Settings: tictactoe.Settings,
-    useGameController: tictactoe.useGameController,
-    InputVisualization: null,  // TicTacToe doesn't have input visualization
-  },
-}
+// Export snake components directly
+export const config = snake.config
+export const Board = snake.Board
+export const Settings = snake.Settings
+export const useGameController = snake.useGameController
+export const InputVisualization = snake.InputVisualization
 
-// Helper to get game list for UI
-export const getGameList = () => {
-  return Object.entries(GAMES).map(([id, game]) => ({
-    id,
-    name: game.name,
-    description: game.description,
-    comingSoon: game.comingSoon || false,
-  }))
-}
-
-// Helper to apply a game's theme
-export const applyTheme = (gameId) => {
-  const game = GAMES[gameId]
-  if (!game?.theme) return
+// Helper to apply theme
+export const applyTheme = () => {
+  const theme = config.theme
+  if (!theme) return
 
   const root = document.documentElement
-  Object.entries(game.theme).forEach(([key, value]) => {
-    // Convert camelCase to kebab-case for CSS variable
+  Object.entries(theme).forEach(([key, value]) => {
     const cssVar = `--${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`
     root.style.setProperty(cssVar, value)
   })
 }
 
-// Default export
-export default GAMES
+export default config

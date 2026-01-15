@@ -9,7 +9,7 @@ export default function SnakeBoard({ settings, gameState, cellSize }) {
   const { gridSize, colors, debug = {} } = settings
 
   // Extract snake-specific state from gameState (opaque to App.jsx)
-  const { snake, food, debugData = {} } = gameState || {}
+  const { snake = [], food = {}, debugData = {} } = gameState || {}
   const { danger_cells = [], path_cells = [], segment_cells = [], segment_connections = [] } = debugData
 
   // Calculate direction snake is facing (from head to second segment)
@@ -149,7 +149,7 @@ export default function SnakeBoard({ settings, gameState, cellSize }) {
       for (let x = 0; x < gridSize; x++) {
         const segInfo = getSegmentInfo(x, y)
         const isSnake = segInfo !== null
-        const isFood = food.x === x && food.y === y
+        const isFood = food && food.x === x && food.y === y
 
         // Debug info for this cell
         const dangerInfo = getDangerCellInfo(x, y)

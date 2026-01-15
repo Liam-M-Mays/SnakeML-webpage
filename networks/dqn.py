@@ -258,22 +258,48 @@ class DQN(BaseNetwork, nn.Module):
         return self._episodes
 
     def save(self, path: str):
-        """Save network state."""
+        """Save network state including all weights and training state."""
         torch.save({
             'model': self.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'episodes': self._episodes,
             'epsilon': self.epsilon,
+            # Save config for validation on load
+            'config': {
+                'action_dim': self.action_dim,
+                'batch_size': self.batch_size,
+                'gamma': self.gamma,
+                'lr': self.lr,
+                'use_cnn': self.use_cnn,
+            }
         }, path)
 
     def load(self, path: str):
-        """Load network state."""
-        checkpoint = torch.load(path, weights_only=False)
+        """Load network state with proper device mapping."""
+        # Load checkpoint to the correct device
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+
+        # Load model weights
         self.load_state_dict(checkpoint['model'])
+
+        # Load optimizer state
         self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+        # Move optimizer internal state tensors to correct device
+        # (Adam stores momentum buffers that need to be on the same device as params)
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+
+        # Restore training state
         self._episodes = checkpoint.get('episodes', 0)
         self.epsilon = checkpoint.get('epsilon', 0.1)
+
+        # Update target network to match loaded weights
         self._update_target()
+
+        print(f"[DQN] Loaded model: {self._episodes} episodes, epsilon={self.epsilon:.4f}")
 
 
 class DQNTarget(nn.Module):

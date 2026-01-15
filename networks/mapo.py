@@ -430,25 +430,47 @@ class MAPO(BaseNetwork, nn.Module):
         return self._last_blend_weights or [1.0 / self.num_experts] * self.num_experts
 
     def save(self, path: str):
-        """Save network state."""
+        """Save network state including all weights and training state."""
         torch.save({
             'model': self.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'episodes': self._episodes,
             'update_count': self._update_count,
             'entropy_coef': self.entropy_coef,
-            'num_experts': self.num_experts,
-            'input_dim': self.input_dim,
-            'action_dim': self.action_dim,
+            # Save config for validation on load
+            'config': {
+                'num_experts': self.num_experts,
+                'input_dim': self.input_dim,
+                'action_dim': self.action_dim,
+                'buffer_size': self.buffer_size,
+                'batch_size': self.batch_size,
+                'lr': self.lr,
+                'ppo_epochs': self.ppo_epochs,
+                'clip_eps': self.clip_eps,
+            }
         }, path)
-        print(f"MAPO model saved: {self._episodes} episodes, {self.num_experts} experts")
+        print(f"[MAPO] Saved model: {self._episodes} episodes, {self.num_experts} experts")
 
     def load(self, path: str):
-        """Load network state."""
-        checkpoint = torch.load(path, weights_only=False, map_location=self.device)
+        """Load network state with proper device mapping."""
+        # Load checkpoint to the correct device
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+
+        # Load model weights
         self.load_state_dict(checkpoint['model'])
+
+        # Load optimizer state
         self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+        # Move optimizer internal state tensors to correct device
+        for state in self.optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(self.device)
+
+        # Restore training state
         self._episodes = checkpoint.get('episodes', 0)
         self._update_count = checkpoint.get('update_count', 0)
         self.entropy_coef = checkpoint.get('entropy_coef', self.entropy_end)
-        print(f"MAPO model loaded: {self._episodes} episodes")
+
+        print(f"[MAPO] Loaded model: {self._episodes} episodes, {self._update_count} updates")

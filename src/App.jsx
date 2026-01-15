@@ -2,8 +2,15 @@ import React, { useState, useEffect, useRef } from 'react'
 import { io } from "socket.io-client"
 import './App.css'
 
-// Game registry and theming
-import { GAMES, getGameList, applyTheme } from './games'
+// Snake game components
+import {
+  config as snakeConfig,
+  Board as SnakeBoard,
+  Settings as SnakeSettings,
+  useGameController,
+  InputVisualization,
+  applyTheme
+} from './games'
 
 // Components
 import Sidebar from './components/Sidebar'
@@ -18,12 +25,9 @@ const socket = io("http://127.0.0.1:5000", {
 })
 
 /**
- * GameArea component - handles game-specific logic.
- * This component is keyed by selectedGame, so it remounts when the game changes.
- * This allows different useGameController hooks to be used without violating React's rules.
+ * GameArea component - handles Snake game logic.
  */
 function GameArea({
-  gameConfig,
   gameSettings,
   socket,
   isTraining,
@@ -34,11 +38,7 @@ function GameArea({
   onStatsChange,
   onReset,
 }) {
-  const GameBoard = gameConfig?.Board
-  const useGameController = gameConfig?.useGameController
-  const GameInputVisualization = gameConfig?.InputVisualization
-
-  // Call the game-specific controller hook
+  // Call the game controller hook
   const gameController = useGameController?.(socket, gameSettings, {
     isTraining,
     isRunning,
@@ -86,7 +86,6 @@ function GameArea({
       agentId: selectedAgent?.id,
       agentType: selectedAgent?.type,
       gridSize: gameSettings.gridSize,
-      game: gameConfig?.id
     })
 
     // Skip init if resuming from pause with same params
@@ -119,16 +118,13 @@ function GameArea({
       grid_size: gameSettings.gridSize || 10,
       control_mode: controlMode,
       params: params,
-      game_type: gameConfig?.id || 'snake',
       random_start_state: gameSettings.randomStartState || false,
       random_max_length: gameSettings.randomMaxLength || null,
       inputs: gameSettings.inputs || {},
       rewards: gameSettings.rewards || {},
       device: gameSettings.device || 'cpu',
-      opponent_type: gameSettings.opponentType || 'random',
-      ai_player: gameSettings.aiPlayer || 'O',
     })
-  }, [isRunning, isTraining, selectedAgent, gameSettings.gridSize, gameConfig?.id])
+  }, [isRunning, isTraining, selectedAgent, gameSettings.gridSize])
 
   // Load saved model
   useEffect(() => {
@@ -146,24 +142,19 @@ function GameArea({
     <>
       {/* Game Board */}
       <ErrorBoundary fallbackMessage="Failed to render the game board. Try refreshing the page.">
-        {GameBoard && (
-          <GameBoard
-            settings={gameSettings}
-            gameState={gameController?.gameState}
-            cellSize={cellSize}
-            onCellClick={gameController?.boardClickHandler}
-          />
-        )}
+        <SnakeBoard
+          settings={gameSettings}
+          gameState={gameController?.gameState}
+          cellSize={cellSize}
+        />
       </ErrorBoundary>
 
-      {/* Game-specific Input Visualization */}
-      {GameInputVisualization && (
-        <GameInputVisualization
-          socket={socket}
-          isTraining={isTraining}
-          gameSettings={gameSettings}
-        />
-      )}
+      {/* Input Visualization */}
+      <InputVisualization
+        socket={socket}
+        isTraining={isTraining}
+        gameSettings={gameSettings}
+      />
     </>
   )
 }
@@ -173,19 +164,12 @@ function App() {
   const [leftCollapsed, setLeftCollapsed] = useState(false)
   const [rightCollapsed, setRightCollapsed] = useState(false)
 
-  // ========== GAME SELECTION ==========
-  const [selectedGame, setSelectedGame] = useState('snake')
-  const gameConfig = GAMES[selectedGame]
-
-  // Get components from game module
-  const GameSettingsPanel = gameConfig?.Settings
-
   // ========== GAME STATE ==========
   const [isRunning, setIsRunning] = useState(false)
   const [gameSpeed, setGameSpeed] = useState(250)
 
-  // Game-specific settings (passed to game's Settings component)
-  const [gameSettings, setGameSettings] = useState(gameConfig?.defaultSettings || {})
+  // Game settings
+  const [gameSettings, setGameSettings] = useState(snakeConfig.defaultSettings || {})
 
   // ========== AI AGENT STATE ==========
   const [agents, setAgents] = useState([])
@@ -195,7 +179,7 @@ function App() {
   const [selectedDevice, setSelectedDevice] = useState('cpu')
 
   // ========== VALUES FROM GAME CONTROLLER ==========
-  const [stats, setStats] = useState({})  // Game-specific stats
+  const [stats, setStats] = useState({})
   const resetFnRef = useRef(null)
 
   // ========== DERIVED VALUES ==========
@@ -204,17 +188,8 @@ function App() {
 
   // ========== THEME APPLICATION ==========
   useEffect(() => {
-    applyTheme(selectedGame)
-  }, [selectedGame])
-
-  // ========== GAME CHANGE HANDLER ==========
-  useEffect(() => {
-    const config = GAMES[selectedGame]
-    if (config?.defaultSettings) {
-      setGameSettings(config.defaultSettings)
-    }
-    resetGame()
-  }, [selectedGame])
+    applyTheme()
+  }, [])
 
   // ========== GAME FUNCTIONS ==========
   const resetGame = () => {
@@ -277,7 +252,7 @@ function App() {
     socket.emit('list_models')
   }
 
-  // ========== SOCKET LISTENERS (generic) ==========
+  // ========== SOCKET LISTENERS ==========
   useEffect(() => {
     // Request saved models on connect
     socket.emit('list_models')
@@ -319,15 +294,13 @@ function App() {
   }, [])
 
   // ========== RENDER ==========
-  const gameList = getGameList()
-
   return (
     <div className="app">
       {/* Header */}
       <header className="header">
-        <h1>ML Playground</h1>
+        <h1>SnakeML</h1>
         <div className="stats">
-          {gameConfig?.statsConfig?.layout.map(({ key, label, disabledWhen }) => {
+          {snakeConfig.statsConfig?.layout.map(({ key, label, disabledWhen }) => {
             const isDisabled = disabledWhen && gameSettings[disabledWhen]
             const value = isDisabled ? '--' : (stats[key] ?? 0)
             return (
@@ -341,48 +314,25 @@ function App() {
 
       {/* Main Content */}
       <div className="main-content">
-        {/* Left Sidebar - Games & Settings */}
+        {/* Left Sidebar - Settings */}
         <Sidebar
-          title="Games"
+          title="Settings"
           side="left"
           collapsed={leftCollapsed}
           onToggle={() => setLeftCollapsed(!leftCollapsed)}
         >
-          {/* Game Selection */}
-          <div className="game-list">
-            {gameList.map(game => (
-              <div
-                key={game.id}
-                className={`game-item ${game.id === selectedGame ? 'selected' : ''} ${game.comingSoon ? 'coming-soon' : ''}`}
-                onClick={() => !game.comingSoon && !isRunning && setSelectedGame(game.id)}
-              >
-                <span className="game-name">{game.name}</span>
-                {game.comingSoon && <span className="badge">Soon</span>}
-              </div>
-            ))}
-          </div>
-
-          {/* Game-specific Settings */}
-          {GameSettingsPanel && (
-            <div className="game-settings-section">
-              <h4>Game Settings</h4>
-              <ErrorBoundary fallbackMessage="Failed to load game settings.">
-                <GameSettingsPanel
-                  settings={gameSettings}
-                  onChange={setGameSettings}
-                  disabled={isRunning}
-                />
-              </ErrorBoundary>
-            </div>
-          )}
+          <ErrorBoundary fallbackMessage="Failed to load game settings.">
+            <SnakeSettings
+              settings={gameSettings}
+              onChange={setGameSettings}
+              disabled={isRunning}
+            />
+          </ErrorBoundary>
         </Sidebar>
 
         {/* Center - Game Area */}
         <div className="game-area">
-          {/* GameArea component - keyed by selectedGame to force remount */}
           <GameArea
-            key={selectedGame}
-            gameConfig={gameConfig}
             gameSettings={gameSettings}
             socket={socket}
             isTraining={isTraining}
@@ -394,7 +344,7 @@ function App() {
             onReset={(fn) => { resetFnRef.current = fn }}
           />
 
-          {/* Training Metrics Charts - below game board */}
+          {/* Training Metrics Charts */}
           <TrainingChart
             socket={socket}
             isTraining={isTraining}
@@ -434,13 +384,13 @@ function App() {
             )}
           </div>
 
-          {/* Instructions - from game config */}
+          {/* Instructions */}
           <div className="instructions">
-            {!isTraining && gameConfig?.humanInstructions && (
-              <p>{gameConfig.humanInstructions}</p>
+            {!isTraining && snakeConfig.humanInstructions && (
+              <p>{snakeConfig.humanInstructions}</p>
             )}
-            {isTraining && gameConfig?.trainingInstructions && (
-              <p>{gameConfig.trainingInstructions}</p>
+            {isTraining && snakeConfig.trainingInstructions && (
+              <p>{snakeConfig.trainingInstructions}</p>
             )}
           </div>
         </div>
@@ -467,7 +417,7 @@ function App() {
               onSaveModel={handleSaveModel}
               onDeleteModel={handleDeleteModel}
               onRefreshModels={handleRefreshModels}
-              selectedGame={selectedGame}
+              selectedGame="snake"
               socket={socket}
               selectedDevice={selectedDevice}
               onDeviceChange={setSelectedDevice}

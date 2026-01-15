@@ -1,14 +1,15 @@
-# SnakeML - Machine Learning Playground
+# SnakeML
 
-An interactive web application for playing Snake and watching AI agents learn through reinforcement learning. Train DQN and PPO agents in real-time, visualize their progress, and save/load trained models.
+An interactive web application for playing Snake and watching AI agents learn through reinforcement learning. Train DQN, PPO, and MANN agents in real-time, visualize their progress, and save/load trained models.
 
 ## Features
 
 - **Play Snake**: Use arrow keys to control the snake manually
-- **Train AI Agents**: Create and train DQN or PPO agents
+- **Train AI Agents**: Create and train DQN, PPO, or MANN agents
 - **Real-time Visualization**: Watch the AI learn in real-time or train at maximum speed
+- **Training Metrics**: Live charts showing rewards, scores, and loss over time
 - **Model Management**: Save, load, and manage trained models
-- **Configurable Settings**: Adjust grid size, colors, and hyperparameters
+- **Configurable Settings**: Adjust grid size, colors, inputs, rewards, and hyperparameters
 
 ## Architecture
 
@@ -20,19 +21,22 @@ SnakeML/
 │   │   ├── AISettings.jsx  # AI agent controls
 │   │   ├── ErrorBoundary.jsx
 │   │   ├── Sidebar.jsx
-│   │   └── SpeedControl.jsx
-│   ├── context/            # React Context providers
-│   │   ├── SocketContext.jsx
-│   │   ├── GameContext.jsx
-│   │   └── AgentContext.jsx
-│   ├── games/              # Game-specific UI
+│   │   ├── SpeedControl.jsx
+│   │   ├── TrainingChart.jsx
+│   │   └── InputVisualization.jsx
+│   ├── games/              # Snake game UI
 │   │   └── snake/
+│   │       ├── Board.jsx   # Game board renderer
+│   │       ├── Settings.jsx # Game settings panel
+│   │       ├── config.js   # Game configuration
+│   │       └── useGameController.js
 │   └── utils/              # Utilities
 │       └── validation.js
 ├── server/                 # Flask Backend
 │   ├── app.py              # SocketIO server
 │   ├── session.py          # Game session management
 │   ├── players.py          # Player abstractions
+│   ├── metrics.py          # Training metrics collection
 │   └── validation.py       # Input validation
 ├── games/                  # Game Environments
 │   ├── base.py             # Abstract game interface
@@ -41,6 +45,8 @@ SnakeML/
 │   ├── base.py             # Abstract network interface
 │   ├── dqn.py              # Deep Q-Network
 │   ├── ppo.py              # Proximal Policy Optimization
+│   ├── mann.py             # Mixture of Experts
+│   ├── mapo.py             # Memory Augmented Policy Optimization
 │   └── replay_buffer.py    # Experience buffers
 ├── models/                 # Saved model weights
 └── tests/                  # Test suite

@@ -1,5 +1,5 @@
 """
-Flask SocketIO server for MLplayground.
+Flask SocketIO server for SnakeML.
 
 This handles WebSocket communication between the frontend and backend.
 """
@@ -20,7 +20,6 @@ from flask_cors import CORS
 import torch
 
 from games.snake import SnakeEnv
-from games.tictactoe import TicTacToeEnv
 from server.session import Session
 from server.players import create_player, HumanPlayer, NetworkPlayer
 from server.validation import (
@@ -69,7 +68,7 @@ socketio = SocketIO(app, cors_allowed_origins=allowed_origins)
 @app.route('/')
 def index():
     """Health check endpoint."""
-    return {'status': 'ok', 'message': 'MLplayground backend running'}
+    return {'status': 'ok', 'message': 'SnakeML backend running'}
 
 # Global session (single-user mode)
 session = None
@@ -77,44 +76,32 @@ training_loop = False
 debug_settings = {'vision': False, 'path': False, 'segments': False}  # Debug visualization toggles
 
 
-def create_game(game_type: str, grid_size: int = 10, use_cnn: bool = False,
+def create_game(grid_size: int = 10, use_cnn: bool = False,
                 random_start_state: bool = False, random_max_length: int = None,
-                inputs: dict = None, rewards: dict = None,
-                opponent_type: str = 'random', ai_player: str = 'O'):
+                inputs: dict = None, rewards: dict = None):
     """
-    Factory function for creating games.
+    Factory function for creating Snake game.
 
     Args:
-        game_type: Type of game ('snake', 'tictactoe', etc.)
-        grid_size: Size of the game grid (for grid-based games)
+        grid_size: Size of the game grid
         use_cnn: Whether the network will use CNN
-        random_start_state: Whether to start with random length/direction (snake)
+        random_start_state: Whether to start with random length/direction
         random_max_length: Max snake length for random start
         inputs: Input configuration (which features to include)
         rewards: Reward values configuration
-        opponent_type: For two-player games, opponent type ('human', 'random', 'ai')
-        ai_player: For two-player games, which player AI controls ('X' or 'O')
 
     Returns:
-        GameEnv instance
+        SnakeEnv instance
     """
-    if game_type == 'snake':
-        return SnakeEnv(
-            grid_size=grid_size,
-            use_cnn=use_cnn,
-            starvation_limit=grid_size ** 2,  # For AI training
-            random_start_state=random_start_state,
-            random_max_length=random_max_length,
-            inputs=inputs or {},
-            rewards=rewards or {}
-        )
-    elif game_type == 'tictactoe':
-        return TicTacToeEnv(
-            ai_player=ai_player,
-            opponent_type=opponent_type
-        )
-    else:
-        raise ValueError(f"Unknown game type: {game_type}")
+    return SnakeEnv(
+        grid_size=grid_size,
+        use_cnn=use_cnn,
+        starvation_limit=grid_size ** 2,  # For AI training
+        random_start_state=random_start_state,
+        random_max_length=random_max_length,
+        inputs=inputs or {},
+        rewards=rewards or {}
+    )
 
 
 @socketio.on('init')
@@ -126,7 +113,6 @@ def handle_init(data):
         - grid_size: int
         - control_mode: 'human', 'dqn', 'ppo', 'mann', or 'mapo'
         - params: dict of network hyperparameters (for AI modes)
-        - game_type: 'snake' (optional, defaults to snake)
         - device: 'cpu', 'cuda', 'mps', or None for auto-detect
     """
     global session
@@ -160,28 +146,20 @@ def handle_init(data):
         print(f"[INIT] Device {device} not available, will auto-detect")
         device = None
 
-    game_type = data.get('game_type', 'snake')
     random_start_state = data.get('random_start_state', False)
     random_max_length = data.get('random_max_length', None)
     inputs = data.get('inputs', {})
     rewards = data.get('rewards', {})
 
-    # TicTacToe-specific settings
-    opponent_type = data.get('opponent_type', 'random')
-    ai_player = data.get('ai_player', 'O')
-
     # Create game
     use_cnn = False  # Could be a param in the future
     game = create_game(
-        game_type=game_type,
         grid_size=grid_size,
         use_cnn=use_cnn,
         random_start_state=random_start_state,
         random_max_length=random_max_length,
         inputs=inputs,
         rewards=rewards,
-        opponent_type=opponent_type,
-        ai_player=ai_player
     )
 
     # Get state dimension from game
@@ -203,7 +181,7 @@ def handle_init(data):
     # Disable high score tracking if random start state is enabled
     session.set_track_highscore(not random_start_state)
 
-    # Send initial state (game-agnostic - pass through all state)
+    # Send initial state
     game_state = session.get_state()
     emit('game_update', {
         **game_state,
@@ -332,13 +310,13 @@ def handle_step(data):
     if game_state['game_over']:
         game_state = session.reset()
 
-    # Build game update - pass through all game state (game-agnostic)
+    # Build game update
     update_data = {
-        **game_state,  # Include all game-specific state
+        **game_state,
         'episode': session.episodes
     }
 
-    # Add debug visualization data if enabled and game supports it
+    # Add debug visualization data if enabled
     if debug_settings['vision'] or debug_settings['path'] or debug_settings['segments']:
         if hasattr(session.game, 'get_debug_info'):
             debug_info = session.game.get_debug_info(
@@ -402,7 +380,6 @@ def handle_ai_loop():
                 emit('set_highscore', {'highscore': session.highscore})
 
         # Emit periodic updates (every 500ms)
-        # During max-speed training, only send minimal data (no full game state)
         current_time = time.perf_counter()
         if current_time - last_emit_time > 0.5:
             last_emit_time = current_time
@@ -579,7 +556,6 @@ def handle_save_model(data):
         - name: str - Name for the saved model
         - agent_id: str - ID of the agent (for metadata)
         - agent_name: str - Display name of the agent
-        - game: str - Game type (snake, tictactoe, etc.)
     """
     global session
     if session is None:
@@ -593,7 +569,6 @@ def handle_save_model(data):
     name = data.get('name', 'model')
     agent_id = data.get('agent_id', '')
     agent_name = data.get('agent_name', name)
-    game = data.get('game', 'snake')
 
     # Validate and sanitize model name
     is_valid, error, safe_name = validate_model_name(name)
@@ -621,7 +596,7 @@ def handle_save_model(data):
         'episodes': network.episode_count,
         'timestamp': timestamp,
         'agent_id': agent_id,
-        'game': game,
+        'game': 'snake',
     }
     meta_path = MODELS_DIR / f"{filename}.json"
     with open(meta_path, 'w') as f:
